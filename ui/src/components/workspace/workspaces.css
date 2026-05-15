@@ -904,6 +904,119 @@
   font-size: 10px;
 }
 
+/* Empty state with session list. Rendered in the main pane when no
+   session is pinned AND the workspace has 1+ existing sessions.
+   Pushes "Continue an existing session" over "Start a new one" since
+   inbox jumps almost always want continuity, not fresh spawn. */
+.workspace-empty-state {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px 24px;
+  overflow-y: auto;
+}
+.workspace-empty-heading {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: 0.2px;
+}
+.workspace-empty-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 520px;
+}
+.workspace-empty-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.workspace-empty-card:hover {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.workspace-empty-card-meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.workspace-empty-card-name {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.workspace-empty-card-state {
+  font-size: 10px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.workspace-empty-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: var(--bg);
+  border: 0;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.12s;
+}
+.workspace-empty-card-btn:hover {
+  filter: brightness(1.1);
+}
+.workspace-empty-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin: 6px 0 2px;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.workspace-empty-divider::before,
+.workspace-empty-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--border);
+}
+.workspace-empty-secondary-btn {
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px dashed var(--border);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.workspace-empty-secondary-btn:hover {
+  color: var(--fg);
+  border-color: var(--fg-dim);
+}
+
 .workspace-side {
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);

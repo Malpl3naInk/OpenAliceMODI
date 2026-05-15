@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { ArrowRight, MessageSquare } from 'lucide-react'
 import { PageHeader } from '../components/PageHeader'
 import { MarkdownContent } from '../components/MarkdownContent'
 import { inboxLive } from '../live/inbox'
 import { useInboxSelection } from '../live/inbox-selection'
+import { useWorkspace } from '../tabs/store'
+import { useWorkspaces } from '../contexts/WorkspacesContext'
 import { readWorkspaceFile, type ReadFileResult } from '../components/workspace/api'
 import type { InboxEntry, InboxDoc } from '../api/inbox'
 
@@ -70,15 +73,40 @@ function Detail({ entry }: { entry: InboxEntry }) {
   const hasDocs = (entry.docs?.length ?? 0) > 0
   const hasComments = (entry.comments ?? '').trim().length > 0
 
+  // Workspace liveness — drives whether the jump-to-workspace affordance
+  // is enabled. A deleted workspace's inbox entry stays as a record but
+  // has nowhere to navigate to.
+  const { workspaces } = useWorkspaces()
+  const aliveWorkspace = workspaces.find((w) => w.id === entry.workspaceId) ?? null
+  const wsAlive = aliveWorkspace !== null
+  const displayLabel = aliveWorkspace?.tag ?? entry.workspaceLabel ?? entry.workspaceId
+
+  const openOrFocus = useWorkspace((s) => s.openOrFocus)
+  const setSidebar = useWorkspace((s) => s.setSidebar)
+
+  const openWorkspace = () => {
+    if (!wsAlive) return
+    // Switch the sidebar to Workspaces so the user sees the sessions list
+    // alongside the workspace tab (analogue to "open the issue then IM in
+    // chat" — they need both views).
+    setSidebar('workspaces')
+    openOrFocus({ kind: 'workspace', params: { wsId: entry.workspaceId } })
+  }
+
   return (
     <div className="max-w-[820px] mx-auto py-6 px-4 md:px-8">
-      {/* Header: workspace · timestamp. No "New" chip — selection always
-       *  marks read, so by the time the detail pane renders the entry is
-       *  read by definition; the chip would only ever flash for one
-       *  render. The sidebar dot is the canonical unread signal. */}
+      {/* Header: workspace · timestamp. Plain text — the primary navigation
+       *  affordance sits at the bottom of the comments thread (Linear-style
+       *  reply input). Making the label itself a button was too subtle and
+       *  the user didn't expect to click a heading. */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <span className="text-[14px] font-medium text-text">
-          {entry.workspaceLabel ?? entry.workspaceId}
+        <span
+          className={`text-[14px] font-medium ${
+            wsAlive ? 'text-text' : 'text-text-muted/70 line-through'
+          }`}
+          title={wsAlive ? undefined : 'Workspace no longer exists'}
+        >
+          {displayLabel}
         </span>
         <span className="text-[11px] text-text-muted/70 tabular-nums ml-auto">
           {formatAbsolute(entry.ts)}
@@ -106,7 +134,34 @@ function Detail({ entry }: { entry: InboxEntry }) {
         </div>
       )}
 
-      <div className="mt-8 pt-4 border-t border-border/50 text-[12px] text-text-muted/60 font-mono">
+      {/* Reply bar — the navigation entry point. Linear-style: a wide bar
+       *  appended to the comments thread, visually styled like a chat
+       *  input. The action isn't actually sending — clicking opens the
+       *  workspace tab + switches the sidebar so the user can pick a
+       *  session and chat back to the agent there. v2 could pre-fill the
+       *  workspace chat input with whatever the user types here; for v1
+       *  the bar is single-click navigation. */}
+      <div className="mt-6">
+        {wsAlive ? (
+          <button
+            type="button"
+            onClick={openWorkspace}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-bg-tertiary/40 hover:bg-bg-tertiary hover:border-accent/40 transition-colors text-left group"
+          >
+            <MessageSquare size={15} strokeWidth={1.75} className="shrink-0 text-text-muted/70 group-hover:text-accent transition-colors" />
+            <span className="flex-1 text-[13px] text-text-muted/80 group-hover:text-text transition-colors">
+              Reply in <span className="font-medium text-text">{displayLabel}</span>…
+            </span>
+            <ArrowRight size={15} strokeWidth={1.75} className="shrink-0 text-text-muted/60 group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
+          </button>
+        ) : (
+          <div className="px-4 py-3 text-[12px] text-text-muted/60 italic border-t border-border/40 pt-4">
+            Workspace no longer exists — nowhere to reply.
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 text-[11px] text-text-muted/40 font-mono">
         workspace: {entry.workspaceId}
       </div>
     </div>

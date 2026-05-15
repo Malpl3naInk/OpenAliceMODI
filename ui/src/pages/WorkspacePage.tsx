@@ -20,6 +20,7 @@ import { useEffect } from 'react'
 import '@xterm/xterm/css/xterm.css'
 
 import { useWorkspaces } from '../contexts/WorkspacesContext'
+import { useWorkspace } from '../tabs/store'
 import { WorkspaceView } from '../components/workspace/WorkspaceView'
 import type { KeyMap } from '../components/workspace/Terminal'
 import type { ViewSpec } from '../tabs/types'
@@ -35,6 +36,7 @@ interface Props {
 
 export function WorkspacePage({ spec, visible }: Props) {
   const ctx = useWorkspaces()
+  const openOrFocus = useWorkspace((s) => s.openOrFocus)
   const wsId = spec.params.wsId
   const sessionId = spec.params.sessionId ?? null
 
@@ -69,10 +71,11 @@ export function WorkspacePage({ spec, visible }: Props) {
     )
   }
 
-  // One session per tab: pass only this tab's record to WorkspaceView so it
-  // mounts a single TerminalView. TabHost's display:none keeps hidden tabs'
-  // xterm + WS alive, so tab switching doesn't re-mount or re-stream — the
-  // launcher's old multi-slot-in-one-pane trick is moot at this layer.
+  // Sessions list: pass the full workspace.sessions. WorkspaceView's
+  // `runningSlots` is gated on sessionId so the multi-terminal mount
+  // only happens when a session is pinned (one session per tab still
+  // holds for the active path); when sessionId is null, the empty
+  // state needs the full list to render resume/continue cards.
   return (
     <div className="workspaces-root flex-1 min-h-0 flex flex-col">
       {/* OpenAlice-side header bar above the launcher's WorkspaceView. The
@@ -99,11 +102,16 @@ export function WorkspacePage({ spec, visible }: Props) {
           wsId={wsId}
           sessionId={sessionId}
           activeRecord={activeRecord}
-          sessions={activeRecord ? [activeRecord] : []}
+          sessions={workspace.sessions}
           label={workspace.tag}
           keyMap={APP_KEY_MAP}
           onSpawnFresh={() => void ctx.spawn(wsId, {})}
           onResume={(id) => void ctx.resumeSession(wsId, id)}
+          onSelectSession={(id) => {
+            // Running session — already alive on the server, just
+            // navigate. Mirrors the sidebar's onSelectSession path.
+            openOrFocus({ kind: 'workspace', params: { wsId, sessionId: id } })
+          }}
           onSessionLost={() => {
             // 4404 from the WS upgrade — the session is gone server-side.
             // Refresh the list; the reconcile effect will close this tab.

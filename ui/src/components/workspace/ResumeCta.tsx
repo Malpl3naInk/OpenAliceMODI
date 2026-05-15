@@ -160,7 +160,7 @@ function FauxTuiBackdrop(): ReactElement {
   );
 }
 
-function prefixOf(agent: string): string {
+export function prefixOf(agent: string): string {
   if (agent === 'claude') return 'c';
   if (agent === 'codex') return 'x';
   if (agent === 'shell') return 'sh';
@@ -173,7 +173,7 @@ function absoluteTime(iso: string): string {
   return t.toLocaleString();
 }
 
-function relativeTime(iso: string): string {
+export function relativeTime(iso: string): string {
   const t = new Date(iso).getTime();
   if (!Number.isFinite(t)) return '';
   const dMs = Date.now() - t;
