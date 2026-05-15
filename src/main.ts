@@ -29,6 +29,7 @@ import { createSessionTools } from './tool/session.js'
 import { SessionStore } from './core/session.js'
 import { ConnectorCenter } from './core/connector-center.js'
 import { createNotificationsStore } from './core/notifications-store.js'
+import { createInboxStore } from './core/inbox-store.js'
 import { ToolCenter } from './core/tool-center.js'
 import { AgentCenter } from './core/agent-center.js'
 import { AgentWorkRunner } from './core/agent-work.js'
@@ -231,6 +232,7 @@ async function main() {
   // ==================== Notifications store + Connector Center ====================
 
   const notificationsStore = createNotificationsStore()
+  const inboxStore = createInboxStore()
   const connectorCenter = new ConnectorCenter({ eventLog, listenerRegistry, notificationsStore })
 
   // Session awareness tools (registered here because they need connectorCenter)
@@ -409,7 +411,7 @@ async function main() {
   // ==================== Engine Context ====================
 
   const ctx: EngineContext = {
-    config, connectorCenter, notificationsStore, agentCenter, eventLog, toolCallLog, heartbeat, cronEngine, toolCenter,
+    config, connectorCenter, notificationsStore, inboxStore, agentCenter, eventLog, toolCallLog, heartbeat, cronEngine, toolCenter,
     listenerRegistry,
     fire: createEventBus(eventLog),
     bbEngine: getSDKExecutor(),

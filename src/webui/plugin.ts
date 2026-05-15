@@ -25,6 +25,7 @@ import { createPersonaRoutes } from './routes/persona.js'
 import { createNewsRoutes } from './routes/news.js'
 import { createMarketRoutes } from './routes/market.js'
 import { createNotificationsRoutes } from './routes/notifications.js'
+import { createInboxRoutes } from './routes/inbox.js'
 import { createVersionRoutes } from './routes/version.js'
 import { mountOpenTypeBB } from '../server/opentypebb.js'
 import { buildSDKCredentials } from '../domain/market-data/credential-map.js'
@@ -121,6 +122,7 @@ export class WebPlugin implements Plugin {
     app.route('/api/notifications', createNotificationsRoutes({
       notificationsStore: ctx.notificationsStore,
     }))
+    app.route('/api/inbox', createInboxRoutes({ inboxStore: ctx.inboxStore }))
     app.route('/api/version', createVersionRoutes())
 
     // ==================== Workspaces (launcher-style PTY) ====================
