@@ -61,6 +61,12 @@ app.whenReady().then(async () => {
   backend = spawn(process.execPath, [backendEntry], {
     env: {
       ...process.env,
+      // CRITICAL: without this, the spawned process tries to start as
+      // another Electron "main process" (opens a new app instance) rather
+      // than executing the JS file as Node. `process.execPath` is the
+      // Electron binary in main-process context; only this env switches
+      // it to pure-Node runtime mode.
+      ELECTRON_RUN_AS_NODE: '1',
       OPENALICE_WEB_PORT: String(webPort),
       OPENALICE_MCP_PORT: String(mcpPort),
       // Hint for the backend (future use): we're under Electron, not a

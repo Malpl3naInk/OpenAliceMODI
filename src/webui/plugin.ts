@@ -172,7 +172,11 @@ export class WebPlugin implements Plugin {
     })
 
     // ==================== Serve UI (Vite build output) ====================
-    const uiRoot = resolve('dist/ui')
+    // UI bundle lives in `ui/dist/` (the UI package's own dist), not
+    // `dist/ui/` — see ui/vite.config.ts for why (history: UI was added
+    // after engine-only era and got an awkward `../dist/ui` outDir; now
+    // that UI is first-class, the output lives in its own package).
+    const uiRoot = resolve('ui/dist')
     app.use('/*', serveStatic({ root: uiRoot }))
     app.get('*', serveStatic({ root: uiRoot, path: 'index.html' }))
 

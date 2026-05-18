@@ -48,7 +48,12 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../dist/ui',
+    // Output lives inside the package (was '../dist/ui' — a leftover from
+    // when the UI was bolted on as an afterthought to a Telegram-only
+    // engine; cf. memory: linear-vscode-hybrid). Keeping the output inside
+    // ui/ lets turbo's default `outputs: ['dist/**']` track it correctly
+    // and eliminates the "rm -rf dist → dist/ui never rebuilds" footgun.
+    outDir: 'dist',
     emptyOutDir: true,
   },
 })
