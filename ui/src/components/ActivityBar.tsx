@@ -1,5 +1,5 @@
 import { type LucideIcon, MessageSquare, MessagesSquare, Inbox, Bell, LineChart, GitBranch, BarChart3, Newspaper, Zap, Settings, Code2, TerminalSquare, ChevronDown, Plug, Landmark, Info } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { type Page } from '../App'
 import { useWorkspace } from '../tabs/store'
 import type { ActivitySection, ViewSpec } from '../tabs/types'
@@ -211,32 +211,18 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
             return (
               <div key={si} className={si > 0 ? 'mt-4' : ''}>
                 {labeled && (
-                  <div className="flex items-center px-3 mb-1">
-                    <button
-                      type="button"
-                      onClick={() => setCollapsed(
-                        section.sectionLabel,
-                        !isCollapsed,
-                        section.defaultCollapsed,
-                      )}
-                      className="flex-1 flex items-center gap-1.5 py-1 text-[11px] font-medium text-text-muted/60 hover:text-text-muted uppercase tracking-wider transition-colors text-left"
-                      aria-expanded={!isCollapsed}
-                      aria-controls={`activity-section-${si}`}
-                    >
-                      <ChevronDown
-                        size={12}
-                        strokeWidth={2.25}
-                        className={`shrink-0 transition-transform duration-150 ${
-                          isCollapsed ? '-rotate-90' : 'rotate-0'
-                        }`}
-                        aria-hidden
-                      />
-                      <span>{section.sectionLabel}</span>
-                    </button>
-                    {section.description && (
-                      <SectionHintPopover description={section.description} label={section.sectionLabel} />
+                  <SectionHeader
+                    label={section.sectionLabel}
+                    description={section.description}
+                    isCollapsed={isCollapsed}
+                    onToggleCollapse={() => setCollapsed(
+                      section.sectionLabel,
+                      !isCollapsed,
+                      section.defaultCollapsed,
                     )}
-                  </div>
+                    controlsId={`activity-section-${si}`}
+                    showItems={showItems}
+                  />
                 )}
                 {showItems && (
                   <div className="flex flex-col gap-0.5" id={`activity-section-${si}`}>
@@ -312,52 +298,77 @@ export function ActivityBar({ open, onClose, onItemActivated }: ActivityBarProps
   )
 }
 
-// ==================== SectionHintPopover ====================
+// ==================== SectionHeader ====================
 
 /**
- * Small (i) trigger next to a section header that reveals the section's
- * `description` prose in a popover on click. Inline rendering of the
- * description visually competed with the section's nav items (the prose
- * was longer than the items it described), so we pulled it behind an
- * intentional affordance — visible to users who care about lifecycle
- * framing, invisible to everyone else.
+ * Section header row: collapse-toggle on the left + optional (i)
+ * disclosure on the right that expands the section's `description`
+ * prose inline below the row, pushing items down.
  *
- * Closes on outside click via a document mousedown listener that
- * detaches the moment the popover closes.
+ * Why inline rather than a floating popover: the nav uses
+ * `overflow-y: auto` for scrolling, which clips horizontally-
+ * overflowing absolute children. An inline disclosure sidesteps that
+ * entirely and lets the prose use full sidebar width.
+ *
+ * Hint visibility is component-local state — every fresh mount starts
+ * collapsed. Intentional: the description is reference info, not a
+ * preference worth persisting.
  */
-function SectionHintPopover({ description, label }: { description: string; label: string }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handle = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
-  }, [open])
-
+function SectionHeader({
+  label,
+  description,
+  isCollapsed,
+  onToggleCollapse,
+  controlsId,
+  showItems,
+}: {
+  label: string
+  description?: string
+  isCollapsed: boolean
+  onToggleCollapse: () => void
+  controlsId: string
+  showItems: boolean
+}) {
+  const [hintOpen, setHintOpen] = useState(false)
   return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center justify-center p-0.5 text-text-muted/50 hover:text-text-muted transition-colors"
-        aria-label={`About ${label}`}
-        aria-expanded={open}
-      >
-        <Info size={11} strokeWidth={2.25} aria-hidden />
-      </button>
-      {open && (
-        <div
-          role="dialog"
-          aria-label={`${label} section info`}
-          className="absolute left-0 top-full mt-1 w-[240px] z-50 p-3 rounded-md bg-bg-tertiary border border-border shadow-lg text-[11px] text-text-muted leading-relaxed normal-case tracking-normal font-normal"
+    <>
+      <div className="flex items-center px-3 mb-1">
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="flex-1 flex items-center gap-1.5 py-1 text-[11px] font-medium text-text-muted/60 hover:text-text-muted uppercase tracking-wider transition-colors text-left"
+          aria-expanded={!isCollapsed}
+          aria-controls={controlsId}
         >
+          <ChevronDown
+            size={12}
+            strokeWidth={2.25}
+            className={`shrink-0 transition-transform duration-150 ${
+              isCollapsed ? '-rotate-90' : 'rotate-0'
+            }`}
+            aria-hidden
+          />
+          <span>{label}</span>
+        </button>
+        {description && (
+          <button
+            type="button"
+            onClick={() => setHintOpen((o) => !o)}
+            className={`flex items-center justify-center p-0.5 transition-colors ${
+              hintOpen ? 'text-text-muted' : 'text-text-muted/50 hover:text-text-muted'
+            }`}
+            aria-label={`About ${label}`}
+            aria-expanded={hintOpen}
+          >
+            <Info size={11} strokeWidth={2.25} aria-hidden />
+          </button>
+        )}
+      </div>
+      {showItems && description && hintOpen && (
+        <p className="px-3 mb-2 text-[11px] text-text-muted/60 leading-relaxed">
           {description}
-        </div>
+        </p>
       )}
-    </div>
+    </>
   )
 }
