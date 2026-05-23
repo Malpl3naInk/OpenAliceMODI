@@ -3,7 +3,11 @@
 **Threat**: Unauthenticated access to authenticated endpoints.
 **Severity**: Critical
 **Tier applies**: T2 (LAN) ☑ / T3 (public) ☑ (T1 localhost is bypass-by-design)
-**Status (2026-05-23)**: ❌ Pre-implementation — every case succeeds (no auth exists)
+**Status (2026-05-23)**: ✅ Mitigated in commit `754cef7` — admin token +
+session cookie + Hono middleware shipped. Cases 1.1 / 1.2 / 1.3 covered by
+`src/webui/middleware/auth.spec.ts`. WebSocket upgrade gate added in the
+same series — see `src/webui/workspaces-ws.ts:isUpgradeAuthorized`. Manual
+re-run of curl seed cases pending (see "Verification status" below).
 
 ## What this class is
 
@@ -38,7 +42,11 @@ curl -i http://localhost:47331/api/trading/uta
 **Secure behavior**: `401 Unauthorized` with body indicating auth required
 (or 302 redirect to `/login`).
 
-**Current behavior (2026-05-23)**: `200 OK` with full UTA list. ❌ Confirmed bypass.
+**Current behavior (2026-05-23, post-754cef7)**: from non-localhost socket,
+`401 Unauthorized`. From true loopback (`127.0.0.1`/`::1`) — `200 OK`, by
+design (T1 single-user passthrough). Verified by
+`auth.spec.ts > "01.1: GET /api/trading/uta without cookie from non-localhost → 401"`.
+✅ Mitigated.
 
 **Severity**: Critical (lists configured broker IDs to anyone).
 
@@ -55,7 +63,10 @@ curl -i -X POST http://localhost:47331/api/trading/uta/alpaca-paper/wallet/stage
 
 **Secure behavior**: `401`.
 
-**Current**: `200` with order staged. ❌ Confirmed.
+**Current (post-754cef7)**: `401` from non-localhost (cookie missing). On
+localhost without cookie: still `200` (T1 passthrough). Verified by
+`auth.spec.ts > "01.2: POST mutation without cookie from non-localhost → 401"`.
+✅ Mitigated.
 
 **Severity**: Critical — chain to push and you've placed a real order.
 
@@ -72,7 +83,10 @@ curl -i http://localhost:47331/api/trading/uta \
 **Secure behavior**: `401`. Cookie lookup in `sessions.json` must
 return nothing for unknown SIDs.
 
-**Current**: `200` (no cookie checking at all). ❌ Will be the test post-impl.
+**Current (post-754cef7)**: `401`. Forged SID returns null from
+`session-store.validateAndTouch()`; middleware default-denies. Verified by
+`auth.spec.ts > "01.3: forged cookie → 401"` and
+`auth.spec.ts > "empty cookie value treated as 'no session' → 401"`. ✅ Mitigated.
 
 ---
 
@@ -213,6 +227,22 @@ protected route. CORS should reject from non-allowed origins.
 **Current**: Hono's default CORS may allow. Verify after auth impl.
 
 ---
+
+## Verification status (per case, 2026-05-23 post-754cef7)
+
+| # | Title                                  | Unit-verified | Curl re-run | Status |
+|---|----------------------------------------|---------------|-------------|--------|
+| 1.1  | Plain GET no cookie                 | ✅ (auth.spec.ts) | pending | Mitigated |
+| 1.2  | Plain POST no cookie                | ✅                | pending | Mitigated |
+| 1.3  | Forged cookie                        | ✅                | pending | Mitigated |
+| 1.4  | Expired session                      | ✅ (session-store.spec.ts "prunes expired") | pending | Mitigated |
+| 1.5  | Stale session across instance        | ⚠ partial — `revokeAllSessions()` exists, no UI yet | pending | Operator path only |
+| 1.6  | Bearer token in Authorization        | ⚪ design choice (a) — bearer NOT accepted | pending | By design |
+| 1.7  | Method-confused request              | ⚪ unchanged — Hono default | pending | Out of scope |
+| 1.8  | Path traversal on :id                | ⚪ unchanged — Hono normalizes | pending | Out of scope |
+| 1.9  | 404 vs 401 enumeration               | ⚪ informational | pending | Accepted |
+| 1.10 | BFF proxy bypass via UTA direct      | ❌ STILL OPEN — UTA `127.0.0.1` accepts anyone same-host | n/a | Same-host trust by design; revisit when UTA moves off-host |
+| 1.11 | OPTIONS preflight cross-origin       | ⚪ informational | pending | Out of scope |
 
 ## Extension hints (for the red-team agent)
 

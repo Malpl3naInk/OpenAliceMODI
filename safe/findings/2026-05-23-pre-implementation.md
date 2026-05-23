@@ -3,7 +3,10 @@
 **Date**: 2026-05-23
 **Reporter**: red-team scaffold author (during `safe/` kit construction)
 **Severity**: Critical (when deployed at T2/T3 tier — see scope)
-**Status**: Open — being addressed by upcoming auth implementation work
+**Status**: Mitigated in commit `754cef7` (2026-05-23) — see "Mitigation"
+section at the bottom. This finding is preserved as the pre-implementation
+baseline; specific case re-runs live in the per-playbook "Verification status"
+tables.
 **Related playbook**: all of `playbooks/*` — every seed case currently passes
 
 ## Summary
@@ -121,6 +124,40 @@ Files to create / modify:
 - `src/services/auth/session-store.ts` — sessions.json + cookie issuance
 - `src/webui/routes/auth.ts` — `/api/auth/login` + `/api/auth/logout`
 - `src/webui/plugin.ts` — wire it all up with correct mount order
+
+## Mitigation (added 2026-05-23 — commit `754cef7`)
+
+The auth implementation queued above shipped within the same day. Concretely:
+
+- `src/services/auth/token-store.ts` — admin token bootstrap, scrypt hash
+  (N=16384, r=8, p=1), plaintext shown once on first run, `auth.json` written
+  with `0o600`.
+- `src/services/auth/session-store.ts` — `data/config/sessions.json`, 32-byte
+  base64url SIDs, 7-day sliding TTL, atomic tmp+rename writes, 30s touch throttle.
+- `src/webui/middleware/auth.ts` — Hono middleware; public-path allowlist;
+  Origin allowlist for mutations; localhost passthrough gated on
+  `OPENALICE_TRUSTED_PROXIES` config.
+- `src/webui/routes/auth.ts` — `POST /api/auth/login`, `POST /api/auth/logout`,
+  `GET /api/auth/status`. Cookies: `HttpOnly; SameSite=Lax;
+  Secure (when HTTPS); Max-Age=604800`.
+- `src/webui/plugin.ts` — bootstrap call early, public-mode safety net
+  (non-loopback bind + no token + no `OPENALICE_DISABLE_AUTH=1` → refuse to start).
+- `src/webui/workspaces-ws.ts` — WebSocket upgrade handler re-applies the
+  same auth gate (HTTP middleware doesn't run for upgrades). Localhost
+  passthrough + cookie check.
+
+Test coverage: 43 new test cases across token-store / session-store /
+middleware specs, all passing (1783/1783 total).
+
+Open follow-ups (tracked in per-playbook status tables, not as new findings):
+
+- UI login flow — React app still assumes always-authed; needs 401 handler
+  + login modal before public deployment is operator-usable.
+- Token rotation Settings UI — operator-friendly rotation (today: `rm
+  data/config/auth.json && restart`).
+- Playbooks 04-12 (public-misconfig, credential-leakage, ws-auth detail,
+  uta-direct-bypass, network-exposure, xss-headers, rate-limit-brute) —
+  drafted out as files, seed cases still to fill.
 
 ## Notes
 

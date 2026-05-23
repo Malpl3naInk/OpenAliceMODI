@@ -15,8 +15,50 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { logger as launcherLogger } from '../workspaces/logger.js';
 import type { WorkspaceService } from '../workspaces/service.js';
+import { validateAndTouch } from '@/services/auth/session-store.js';
+import { isLoopbackIp, SESSION_COOKIE_NAME } from './middleware/auth.js';
 
 const WS_PATH = '/api/workspaces/pty';
+
+/**
+ * WS upgrade requests don't traverse the Hono middleware chain (we own
+ * the `upgrade` event ourselves). So we re-apply the same auth check
+ * here: same localhost passthrough rules, same cookie lookup, same
+ * default-deny. See safe/playbooks/07-websocket-auth.md.
+ */
+function readSessionCookie(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader) return null;
+  for (const raw of cookieHeader.split(';')) {
+    const entry = raw.trim();
+    const eq = entry.indexOf('=');
+    if (eq < 0) continue;
+    if (entry.slice(0, eq) === SESSION_COOKIE_NAME) {
+      const value = entry.slice(eq + 1).trim();
+      return value.length > 0 ? decodeURIComponent(value) : null;
+    }
+  }
+  return null;
+}
+
+async function isUpgradeAuthorized(req: IncomingMessage): Promise<boolean> {
+  if (process.env['OPENALICE_DISABLE_AUTH'] === '1') return true;
+
+  const trustedProxies = (process.env['OPENALICE_TRUSTED_PROXIES'] ?? '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+
+  // Localhost trust passthrough — only when no trusted proxy is configured.
+  // Same rule as the HTTP middleware: with a trusted proxy in front,
+  // every request looks like localhost, so we MUST require a cookie.
+  if (trustedProxies.length === 0) {
+    const remote = req.socket.remoteAddress ?? '';
+    if (isLoopbackIp(remote)) return true;
+  }
+
+  const sid = readSessionCookie(req.headers.cookie);
+  if (!sid) return false;
+  const session = await validateAndTouch(sid);
+  return session !== null;
+}
 
 export interface AttachedWS {
   /** Tear down the WebSocketServer and detach upgrade listener. */
@@ -49,8 +91,24 @@ export function attachWorkspacesWS(httpServer: HttpServer, svc: WorkspaceService
       return;
     }
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req, url);
+    // Auth check — same gate as the HTTP middleware.
+    // Promise needed because session lookup is async (file-backed).
+    isUpgradeAuthorized(req).then((authorized) => {
+      if (!authorized) {
+        launcherLogger.warn('upgrade.auth_rejected', {
+          remoteAddress: req.socket.remoteAddress ?? null,
+        });
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req, url);
+      });
+    }).catch((err) => {
+      launcherLogger.error('upgrade.auth_check_failed', { err });
+      socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+      socket.destroy();
     });
   };
 

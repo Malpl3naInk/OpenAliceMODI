@@ -5,7 +5,12 @@ to gain authenticated access without a session.
 **Severity**: Critical (if exploited successfully)
 **Tier applies**: T2 ☑ / T3 ☑ (the entire reason this attack exists is
   the localhost-bypass dev-UX feature)
-**Status (2026-05-23)**: ❌ Pre-implementation — no localhost-trust logic yet, so attack vector doesn't yet exist; will be the **#1 thing to test after auth lands**.
+**Status (2026-05-23)**: ✅ Mitigated in commit `754cef7`. Localhost
+trust gates on the raw `socket.remoteAddress` (not parsed headers), and
+the trust path is **disabled entirely** when `OPENALICE_TRUSTED_PROXIES`
+is configured. XFF-spoof + Host-spoof cases covered by
+`auth.spec.ts > "03.1: X-Forwarded-For: 127.0.0.1 ... → ignored"` and
+`"03.4: when trusted proxy is configured, localhost passthrough disabled entirely"`.
 
 ## What this class is
 

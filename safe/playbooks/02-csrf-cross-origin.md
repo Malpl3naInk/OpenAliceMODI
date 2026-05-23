@@ -4,7 +4,9 @@
 authenticated requests to OpenAlice while the victim has an active session.
 **Severity**: High
 **Tier applies**: T2 ☑ / T3 ☑ (T1 localhost rarely targeted)
-**Status (2026-05-23)**: ❌ Pre-implementation — no auth + no CSRF defense
+**Status (2026-05-23)**: ✅ Mitigated in commit `754cef7` — Origin allowlist
++ `SameSite=Lax` + `HttpOnly` cookie. Cross-origin POST/PUT/DELETE/PATCH with
+a foreign Origin returns 403 via `auth.spec.ts > "02.1: cross-origin POST with bad Origin → 403"`.
 
 ## What this class is
 
