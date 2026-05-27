@@ -4,8 +4,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "vite --mode demo",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build:demo": "tsc -b && vite build --mode demo",
+    "preview": "vite preview",
+    "msw:init": "msw init ./public --save"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
@@ -31,8 +34,14 @@
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",
+    "msw": "^2.14.6",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.9.3",
     "vite": "^6.3.5"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }
