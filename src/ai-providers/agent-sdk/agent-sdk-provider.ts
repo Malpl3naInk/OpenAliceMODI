@@ -16,6 +16,7 @@ import type { AgentSdkConfig, AgentSdkOverride } from './query.js'
 import { toTextHistory } from '../../core/session.js'
 import { buildChatHistoryPrompt, DEFAULT_MAX_HISTORY } from '../utils.js'
 import { readAgentConfig, resolveProfile, type ResolvedProfile } from '../../core/config.js'
+import { resolveAnthropicAuthMode } from '../../core/credential-inference.js'
 import { createChannel } from '../../core/async-channel.js'
 import { askAgentSdk } from './query.js'
 import { buildAgentSdkMcpServer } from './tool-bridge.js'
@@ -51,6 +52,7 @@ export class AgentSdkProvider implements AIProvider {
     const override: AgentSdkOverride = {
       model: effectiveProfile.model, apiKey: effectiveProfile.apiKey, baseUrl: effectiveProfile.baseUrl,
       loginMethod: effectiveProfile.loginMethod as 'api-key' | 'claudeai' | undefined,
+      authMode: resolveAnthropicAuthMode(effectiveProfile),
     }
     const mcpServer = await this.buildMcpServer()
     const result = await askAgentSdk(prompt, config, override, mcpServer)
@@ -75,7 +77,7 @@ export class AgentSdkProvider implements AIProvider {
     // Build override from resolved profile
     const profile = opts?.profile
     const override: AgentSdkOverride | undefined = profile
-      ? { model: profile.model, apiKey: profile.apiKey, baseUrl: profile.baseUrl, loginMethod: profile.loginMethod as 'api-key' | 'claudeai' | undefined }
+      ? { model: profile.model, apiKey: profile.apiKey, baseUrl: profile.baseUrl, loginMethod: profile.loginMethod as 'api-key' | 'claudeai' | undefined, authMode: resolveAnthropicAuthMode(profile) }
       : undefined
     const mcpServer = await this.buildMcpServer(opts?.disabledTools)
 

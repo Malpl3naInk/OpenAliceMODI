@@ -4,6 +4,7 @@ import {
   inferAuthType,
   hasExtractableCredential,
   profileToCredential,
+  resolveAnthropicAuthMode,
   type ProfileLike,
 } from './credential-inference.js'
 
@@ -109,5 +110,32 @@ describe('profileToCredential', () => {
       vendor: 'anthropic',
       authType: 'subscription',
     })
+  })
+})
+
+describe('resolveAnthropicAuthMode', () => {
+  it('explicit authMode wins over everything', () => {
+    expect(resolveAnthropicAuthMode({ authMode: 'bearer' })).toBe('bearer')
+    expect(resolveAnthropicAuthMode({ authMode: 'x-api-key' })).toBe('x-api-key')
+    // explicit x-api-key beats the .io baseUrl inference
+    expect(resolveAnthropicAuthMode({ authMode: 'x-api-key', baseUrl: 'https://api.minimax.io/anthropic' }))
+      .toBe('x-api-key')
+  })
+
+  it('infers bearer for MiniMax international (api.minimax.io)', () => {
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.minimax.io/anthropic' })).toBe('bearer')
+  })
+
+  it('does NOT infer bearer for MiniMax China (minimaxi.com tolerates x-api-key)', () => {
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.minimaxi.com/anthropic' })).toBe('x-api-key')
+  })
+
+  it('defaults to x-api-key for first-party Anthropic and unconfirmed gateways', () => {
+    expect(resolveAnthropicAuthMode({})).toBe('x-api-key')
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.anthropic.com' })).toBe('x-api-key')
+    // GLM / Kimi / DeepSeek left at default until confirmed — over-promoting
+    // would break a working x-api-key setup.
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.z.ai/api/anthropic' })).toBe('x-api-key')
+    expect(resolveAnthropicAuthMode({ baseUrl: 'https://api.deepseek.com/anthropic' })).toBe('x-api-key')
   })
 })

@@ -733,6 +733,10 @@ export interface ResolvedProfile {
   baseUrl?: string
   loginMethod?: string
   provider?: string
+  /** Anthropic-shape only: which header carries the key (x-api-key vs Bearer).
+   *  Consumed via resolveAnthropicAuthMode() at the auth-header construction
+   *  sites (agent-sdk env, vercel anthropic client, test-path adapter). */
+  authMode?: 'x-api-key' | 'bearer'
   /** Pointer into AIProviderConfig.credentials. Preserved on the resolved
    *  shape so callers can fetch the credential separately when needed. */
   credentialSlug?: string

@@ -40,6 +40,14 @@ export interface AgentSdkOverride {
   apiKey?: string
   baseUrl?: string
   loginMethod?: 'api-key' | 'claudeai'
+  /**
+   * api-key mode only: which env var carries the key, and thus which header
+   * the spawned CLI sends. `bearer` → ANTHROPIC_AUTH_TOKEN (Authorization:
+   * Bearer), for anthropic-compatible gateways like MiniMax international.
+   * Default/absent → ANTHROPIC_API_KEY (x-api-key). Ignored under claudeai
+   * (OAuth) login. Mirrors the workspace .claude/settings.local.json writer.
+   */
+  authMode?: 'x-api-key' | 'bearer'
 }
 
 export interface AgentSdkMessage {
@@ -51,6 +59,54 @@ export interface AgentSdkResult {
   text: string
   ok: boolean
   messages: AgentSdkMessage[]
+}
+
+// ==================== Auth env construction ====================
+
+/**
+ * Build the env block handed to the spawned Claude Code CLI, applying the
+ * profile's auth choice. Pure + exported so the auth invariant is unit-tested
+ * without spawning a subprocess.
+ *
+ * Invariants:
+ * - OAuth (loginMethod=claudeai): strip ANTHROPIC_API_KEY + CLAUDE_CODE_SIMPLE
+ *   so the CLI uses the local `claude login` session, not an inherited key.
+ * - api-key + bearer: set ANTHROPIC_AUTH_TOKEN (CLI sends `Authorization:
+ *   Bearer`), clear ANTHROPIC_API_KEY. This is MiniMax's documented setup and
+ *   what api.minimax.io requires.
+ * - api-key + x-api-key (default): set ANTHROPIC_API_KEY, clear
+ *   ANTHROPIC_AUTH_TOKEN.
+ * - api-key mode never leaves BOTH key vars set — Claude Code warns on
+ *   dual-set and gateways can reject ambiguous auth. We always clear the
+ *   counterpart so a stale inherited process.env value can't leak the wrong
+ *   header.
+ */
+export function buildAuthEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  override?: AgentSdkOverride,
+): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = { ...baseEnv }
+  const isOAuthMode = (override?.loginMethod ?? 'api-key') === 'claudeai'
+
+  if (isOAuthMode) {
+    delete env.ANTHROPIC_API_KEY
+    delete env.CLAUDE_CODE_SIMPLE
+    return env
+  }
+
+  const apiKey = override?.apiKey
+  if (apiKey) {
+    if (override?.authMode === 'bearer') {
+      env.ANTHROPIC_AUTH_TOKEN = apiKey
+      delete env.ANTHROPIC_API_KEY
+    } else {
+      env.ANTHROPIC_API_KEY = apiKey
+      delete env.ANTHROPIC_AUTH_TOKEN
+    }
+  }
+  // Force API key mode — disable OAuth even if a local login exists.
+  env.CLAUDE_CODE_SIMPLE = '1'
+  return env
 }
 
 // ==================== Tool lists ====================
@@ -148,22 +204,9 @@ export async function askAgentSdk(
   const finalDisallowed = [...disallowedTools, ...modeDisallowed]
 
   // Build env with authentication — override carries resolved profile values
+  const env = buildAuthEnv(process.env, override)
   const loginMethod = override?.loginMethod ?? 'api-key'
-  const isOAuthMode = loginMethod === 'claudeai'
-
-  const env: Record<string, string | undefined> = { ...process.env }
-  if (isOAuthMode) {
-    // Force OAuth by removing any inherited API key
-    delete env.ANTHROPIC_API_KEY
-    delete env.CLAUDE_CODE_SIMPLE
-  } else {
-    const apiKey = override?.apiKey
-    if (apiKey) env.ANTHROPIC_API_KEY = apiKey
-    // Force API key mode — disable OAuth even if local login exists
-    env.CLAUDE_CODE_SIMPLE = '1'
-  }
   const baseUrl = override?.baseUrl
-  if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl
 
   // Opt-in debug: set ALICE_SDK_DEBUG=1 to turn on the SDK's verbose stderr
   // + capture every child-process stderr chunk into logs/agent-sdk-debug.log.

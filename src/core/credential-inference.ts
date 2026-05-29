@@ -58,6 +58,32 @@ export function inferAuthType(profile: ProfileLike): CredentialAuthType {
   return 'api-key'
 }
 
+/**
+ * Resolve which HTTP header carries the key for an Anthropic-shape request
+ * (agent-sdk backend, or vercel-ai-sdk with provider=anthropic).
+ *
+ * `x-api-key` is Anthropic's first-party standard and the safe default;
+ * `bearer` sends `Authorization: Bearer`, which anthropic-compatible
+ * *gateways* require. An explicit `authMode` on the profile always wins —
+ * that's the per-profile choice the wizard / Apply path stores.
+ *
+ * Fallback inference is deliberately narrow: only `api.minimax.io` (MiniMax's
+ * international endpoint) is auto-promoted to bearer, because it's the one
+ * endpoint confirmed to *reject* x-api-key with a 401. This lets pre-existing
+ * MiniMax-international profiles (created before the authMode field landed)
+ * work without being recreated. The China endpoint (minimaxi.com) tolerates
+ * x-api-key, and other gateways (GLM, Kimi, DeepSeek) are left at the default
+ * until confirmed otherwise — over-promoting would silently break a working
+ * x-api-key setup.
+ */
+export function resolveAnthropicAuthMode(
+  profile: { authMode?: 'x-api-key' | 'bearer'; baseUrl?: string },
+): 'x-api-key' | 'bearer' {
+  if (profile.authMode) return profile.authMode
+  if (/api\.minimax\.io/i.test(profile.baseUrl ?? '')) return 'bearer'
+  return 'x-api-key'
+}
+
 /** Whether the profile's inline fields contain a credential to extract. */
 export function hasExtractableCredential(profile: ProfileLike): boolean {
   if (profile.apiKey) return true

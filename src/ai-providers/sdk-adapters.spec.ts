@@ -174,6 +174,44 @@ describe('resolveTestAdapter (fallback)', () => {
   })
 })
 
+// ==================== resolveTestAdapter — authMode threading ====================
+
+describe('resolveTestAdapter (authMode threads onto anthropic-shape adapters)', () => {
+  const cred: Credential = { vendor: 'minimax', authType: 'api-key', apiKey: 'k', baseUrl: 'https://api.minimax.io/anthropic' }
+
+  it('explicit authMode=bearer reaches the vercel-anthropic config', () => {
+    const profile: ResolvedProfile = { backend: 'agent-sdk', model: 'm', preset: 'minimax', authMode: 'bearer' }
+    const decl = resolveTestAdapter(profile, PRESET_CATALOG)
+    expect(decl.id).toBe('vercel-anthropic')
+    expect((decl.config(cred) as { authMode?: string }).authMode).toBe('bearer')
+  })
+
+  it('inferred bearer (minimax.io baseUrl, no explicit authMode) reaches the config', () => {
+    const profile: ResolvedProfile = {
+      backend: 'agent-sdk', model: 'm', preset: 'minimax', baseUrl: 'https://api.minimax.io/anthropic',
+    }
+    const decl = resolveTestAdapter(profile, PRESET_CATALOG)
+    expect((decl.config(cred) as { authMode?: string }).authMode).toBe('bearer')
+  })
+
+  it('x-api-key default leaves authMode off the config (byte-identical to pre-change)', () => {
+    const profile: ResolvedProfile = { backend: 'agent-sdk', model: 'm', preset: 'deepseek' }
+    const decl = resolveTestAdapter(profile, PRESET_CATALOG)
+    const cfg = decl.config({ vendor: 'deepseek', authType: 'api-key', apiKey: 'k', baseUrl: 'https://api.deepseek.com/anthropic' })
+    expect('authMode' in cfg).toBe(false)
+  })
+
+  it('threads onto the agent-sdk adapter too (Claude OAuth subscription unaffected: x-api-key default)', () => {
+    const profile: ResolvedProfile = {
+      backend: 'agent-sdk', model: 'm', preset: 'custom', loginMethod: 'api-key',
+      baseUrl: 'https://api.minimax.io/anthropic',
+    }
+    const decl = resolveTestAdapter(profile, PRESET_CATALOG)
+    expect(decl.id).toBe('agent-sdk')
+    expect((decl.config(cred) as { authMode?: string }).authMode).toBe('bearer')
+  })
+})
+
 // ==================== invokeAdapter end-to-end ====================
 
 describe('invokeAdapter (vercel-* invokers wire correctly)', () => {
@@ -196,6 +234,40 @@ describe('invokeAdapter (vercel-* invokers wire correctly)', () => {
     expect(mockGenerateText).toHaveBeenCalledWith({
       model: 'anthropic-model-instance',
       prompt: 'Hi',
+    })
+  })
+
+  it('vercel-anthropic invoker sends authToken (not apiKey) in bearer mode', async () => {
+    const decl: SdkAdapterDeclaration = {
+      id: 'vercel-anthropic',
+      config: (c) => ({ apiKey: c.apiKey, baseURL: c.baseUrl, authMode: 'bearer' }),
+    }
+    const cred: Credential = { vendor: 'minimax', authType: 'api-key', apiKey: 'sk-mm', baseUrl: 'https://api.minimax.io/anthropic' }
+
+    await invokeAdapter(decl, cred, 'MiniMax-M2.7', 'Hi', { providers: {} })
+
+    const { createAnthropic } = await import('@ai-sdk/anthropic')
+    expect(createAnthropic).toHaveBeenCalledWith({
+      apiKey: undefined,
+      authToken: 'sk-mm',
+      baseURL: 'https://api.minimax.io/anthropic',
+    })
+  })
+
+  it('vercel-anthropic invoker sends apiKey (not authToken) when authMode absent', async () => {
+    const decl: SdkAdapterDeclaration = {
+      id: 'vercel-anthropic',
+      config: (c) => ({ apiKey: c.apiKey, baseURL: c.baseUrl }),
+    }
+    const cred: Credential = { vendor: 'anthropic', authType: 'api-key', apiKey: 'sk-ant' }
+
+    await invokeAdapter(decl, cred, 'claude-opus-4-7', 'Hi', { providers: {} })
+
+    const { createAnthropic } = await import('@ai-sdk/anthropic')
+    expect(createAnthropic).toHaveBeenCalledWith({
+      apiKey: 'sk-ant',
+      authToken: undefined,
+      baseURL: undefined,
     })
   })
 

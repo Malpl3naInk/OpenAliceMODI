@@ -6,6 +6,7 @@
 
 import type { LanguageModel } from 'ai'
 import type { ResolvedProfile } from '../../core/config.js'
+import { resolveAnthropicAuthMode } from '../../core/credential-inference.js'
 
 /** Result includes the model plus a cache key for change detection. */
 export interface ModelFromConfig {
@@ -24,7 +25,16 @@ export async function createModelFromProfile(profile: ResolvedProfile): Promise<
   switch (p) {
     case 'anthropic': {
       const { createAnthropic } = await import('@ai-sdk/anthropic')
-      const client = createAnthropic({ apiKey: apiKey || undefined, baseURL: url || undefined })
+      // @ai-sdk/anthropic sends `Authorization: Bearer` when given `authToken`,
+      // else `x-api-key` from `apiKey` — exactly one, mirroring the raw SDK and
+      // the agent-sdk env split. Bearer is required by anthropic-compatible
+      // gateways (e.g. MiniMax international); see resolveAnthropicAuthMode.
+      const bearer = resolveAnthropicAuthMode(profile) === 'bearer'
+      const client = createAnthropic({
+        apiKey: bearer ? undefined : (apiKey || undefined),
+        authToken: bearer ? (apiKey || undefined) : undefined,
+        baseURL: url || undefined,
+      })
       return { model: client(m), key }
     }
     case 'openai': {

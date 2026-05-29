@@ -24,6 +24,7 @@
 import type { Credential, ResolvedProfile } from '../core/config.js'
 import type { AIProvider, ProviderResult } from './types.js'
 import { PRESET_CATALOG } from './preset-catalog.js'
+import { resolveAnthropicAuthMode } from '../core/credential-inference.js'
 
 // ==================== Adapter ids and typed configs ====================
 
@@ -92,9 +93,9 @@ export function getSdkAdapterInfo(): SdkAdapterInfo[] {
  * standard. Don't normalize; pass through as-is.
  */
 export interface SdkConfigByAdapter {
-  'agent-sdk':        { apiKey?: string; baseUrl?: string; loginMethod: 'api-key' | 'claudeai' }
+  'agent-sdk':        { apiKey?: string; baseUrl?: string; loginMethod: 'api-key' | 'claudeai'; authMode?: 'x-api-key' | 'bearer' }
   'codex':            { apiKey?: string; baseUrl?: string; loginMethod: 'api-key' | 'codex-oauth' }
-  'vercel-anthropic': { apiKey?: string; baseURL?: string }
+  'vercel-anthropic': { apiKey?: string; baseURL?: string; authMode?: 'x-api-key' | 'bearer' }
   'vercel-openai':    { apiKey?: string; baseURL?: string }
   'vercel-google':    { apiKey?: string; baseURL?: string }
 }
@@ -130,8 +131,13 @@ export const SDK_INVOKERS: { [K in SdkAdapterId]: SdkInvoker<K> } = {
     async invoke(config, model, prompt) {
       const { createAnthropic } = await import('@ai-sdk/anthropic')
       const { generateText } = await import('ai')
+      // Bearer mode → `authToken` (Authorization: Bearer); default → `apiKey`
+      // (x-api-key). Exactly one, matching the real-session auth so the Test
+      // button can't pass-while-chat-fails (or vice versa).
+      const bearer = config.authMode === 'bearer'
       const client = createAnthropic({
-        apiKey: config.apiKey,
+        apiKey: bearer ? undefined : config.apiKey,
+        authToken: bearer ? config.apiKey : undefined,
         baseURL: config.baseURL || undefined,
       })
       const result = await generateText({ model: client(model), prompt })
@@ -175,6 +181,7 @@ export const SDK_INVOKERS: { [K in SdkAdapterId]: SdkInvoker<K> } = {
         apiKey: config.apiKey,
         baseUrl: config.baseUrl,
         loginMethod: config.loginMethod,
+        authMode: config.authMode,
       })
     },
   },
@@ -212,6 +219,18 @@ export function resolveTestAdapter(
   profile: ResolvedProfile,
   presets: Array<{ id: string; sdkAdapters?: { available: SdkAdapterDeclaration[]; test: SdkAdapterId } }>,
 ): SdkAdapterDeclaration {
+  // Anthropic-shape adapters carry an auth header mode (x-api-key vs Bearer)
+  // that lives on the profile, not the credential. Resolve it once and wrap
+  // the chosen declaration so the test request uses the same header the real
+  // session would — otherwise a MiniMax-international profile tests-green but
+  // chats-401 (or vice versa).
+  return withAuthMode(pickTestAdapter(profile, presets), resolveAnthropicAuthMode(profile))
+}
+
+function pickTestAdapter(
+  profile: ResolvedProfile,
+  presets: Array<{ id: string; sdkAdapters?: { available: SdkAdapterDeclaration[]; test: SdkAdapterId } }>,
+): SdkAdapterDeclaration {
   if (profile.preset) {
     const preset = presets.find((p) => p.id === profile.preset)
     if (preset?.sdkAdapters) {
@@ -243,6 +262,31 @@ export function resolveTestAdapter(
     return { id: 'vercel-google', config: (c) => ({ apiKey: c.apiKey, baseURL: c.baseUrl }) }
   }
   return { id: 'vercel-anthropic', config: (c) => ({ apiKey: c.apiKey, baseURL: c.baseUrl }) }
+}
+
+/**
+ * Inject Bearer mode into the two anthropic-shape adapters' config output.
+ * Only `bearer` is injected — `x-api-key` is the default and the invokers
+ * treat an absent authMode as x-api-key, so omitting it keeps the config
+ * minimal (and leaves the common first-party-Anthropic path byte-identical).
+ * Other adapters (codex / vercel-openai / vercel-google) carry no authMode
+ * and pass through untouched. The preset config builders take a Credential
+ * (which has no authMode), so this is where the profile's choice joins in.
+ */
+function withAuthMode(
+  decl: SdkAdapterDeclaration,
+  authMode: 'x-api-key' | 'bearer',
+): SdkAdapterDeclaration {
+  if (authMode !== 'bearer') return decl
+  if (decl.id === 'vercel-anthropic') {
+    const base = decl.config
+    return { id: 'vercel-anthropic', config: (c) => ({ ...base(c), authMode }) }
+  }
+  if (decl.id === 'agent-sdk') {
+    const base = decl.config
+    return { id: 'agent-sdk', config: (c) => ({ ...base(c), authMode }) }
+  }
+  return decl
 }
 
 /**
