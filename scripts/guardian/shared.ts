@@ -57,6 +57,12 @@ export function spawnChild(spec: SpawnSpec): ChildProcess {
   const child = spawn(spec.command, spec.args, {
     env: spec.env,
     stdio: spec.prefixLogs ? ['inherit', 'pipe', 'pipe'] : 'inherit',
+    // On Windows the dev commands (`tsx`, `pnpm`) are `.cmd` shims in
+    // node_modules/.bin. Node's spawn won't apply PATHEXT resolution to find
+    // them without a shell, so a bare `spawn('tsx', …)` throws ENOENT. POSIX
+    // resolves the bin dir directly, so keep shell off there. Args here have
+    // no spaces, so shell quoting isn't a concern.
+    shell: process.platform === 'win32',
   } satisfies SpawnOptions)
 
   if (spec.prefixLogs) {
