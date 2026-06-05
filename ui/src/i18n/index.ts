@@ -14,6 +14,7 @@ import { initReactI18next } from 'react-i18next'
 import { en } from './locales/en'
 import { zh } from './locales/zh'
 import { ja } from './locales/ja'
+import { zhHant } from './locales/zh-Hant'
 import { type AppLocale, setAppLocale } from '../lib/intl'
 import { useLocaleStore, readInitialLocale } from './store'
 
@@ -23,11 +24,12 @@ export const resources = {
   en: { translation: en },
   zh: { translation: zh },
   ja: { translation: ja },
+  'zh-Hant': { translation: zhHant },
 }
 
 function applyLocale(locale: AppLocale): void {
   setAppLocale(locale) // formatters (lib/intl, lib/format) follow
-  document.documentElement.lang = locale // drives :lang(ja) font swap in index.css
+  document.documentElement.lang = locale // drives :lang(ja)/:lang(zh-Hant) font swap in index.css
   void i18n.changeLanguage(locale)
 }
 

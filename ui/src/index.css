@@ -35,6 +35,16 @@
     "Meiryo", "Noto Sans JP", sans-serif;
 }
 
+/* Traditional Chinese (Hant script) gets a Traditional-first sans stack so
+   shared Han characters render in Traditional forms, not the Simplified ones
+   the default stack would pick. Scoped via <html lang="zh-Hant"> — region-
+   neutral (serves both Taiwan and Hong Kong Traditional readers). */
+:root:lang(zh-Hant) {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang TC", "Microsoft JhengHei", "Noto Sans TC",
+    "Noto Sans CJK TC", sans-serif;
+}
+
 html,
 body,
 #root {

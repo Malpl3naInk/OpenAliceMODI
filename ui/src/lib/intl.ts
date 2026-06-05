@@ -15,13 +15,15 @@
  * workspace name) — those stay 'en' so generated ids don't shift with locale.
  */
 
-export type AppLocale = 'en' | 'zh' | 'ja'
+export type AppLocale = 'en' | 'zh' | 'ja' | 'zh-Hant'
 
-/** App locale → BCP-47 tag handed to the Intl.* APIs. */
+/** App locale → BCP-47 tag handed to the Intl.* APIs. `zh-Hant` is the
+ *  Traditional-Han SCRIPT subtag (region-neutral), not a region tag. */
 const BCP47: Record<AppLocale, string> = {
   en: 'en-US',
   zh: 'zh-CN',
   ja: 'ja-JP',
+  'zh-Hant': 'zh-Hant',
 }
 
 let _appLocale: AppLocale = 'en'
