@@ -19,7 +19,7 @@ function LanguageSection() {
   return (
     <ConfigSection title={t('settings.language.title')} description={t('settings.language.description')}>
       <div className="flex gap-2 py-1">
-        {(['en', 'zh', 'ja'] as const).map((l) => (
+        {(['en', 'zh', 'ja', 'zh-Hant'] as const).map((l) => (
           <button
             key={l}
             type="button"
