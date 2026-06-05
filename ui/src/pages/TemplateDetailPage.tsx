@@ -1,9 +1,13 @@
 /**
  * Workspace template detail.
  *
- * Renders the template's README (via MarkdownContent) alongside a spawn
- * form. This is the in-flow staffing surface — read what shape of
- * coworker this Harness produces, fill the parameters, hire one.
+ * Renders the template's README (via MarkdownContent). This is the
+ * in-flow staffing surface — read what shape of coworker this Harness
+ * produces, then hire one via the top-right "Spawn a workspace" button,
+ * which opens the same CreateWorkspaceDialog every other create entry
+ * point uses (sidebar +, Chat +). Keeping a single create presentation
+ * means the README stays a pure reading surface instead of burying a
+ * form below the fold.
  *
  * The instance the agent starts modifying from here will diverge over
  * time; this page describes the **starting shape**. The README on disk
@@ -16,7 +20,7 @@ import { MarkdownContent } from '../components/MarkdownContent'
 import { useWorkspaces } from '../contexts/WorkspacesContext'
 import { useWorkspace } from '../tabs/store'
 import { fetchTemplateReadme } from '../components/workspace/api'
-import { CreateWorkspaceForm } from '../components/workspace/CreateWorkspaceForm'
+import { CreateWorkspaceDialog } from '../components/workspace/CreateWorkspaceDialog'
 
 interface Props {
   spec: { kind: 'template-detail'; params: { name: string } }
@@ -35,6 +39,7 @@ function humanize(name: string): string {
 export function TemplateDetailPage({ spec }: Props) {
   const { templates, agents, refresh } = useWorkspaces()
   const openOrFocus = useWorkspace((s) => s.openOrFocus)
+  const [showCreate, setShowCreate] = useState(false)
 
   const templateName = spec.params.name
   const template = useMemo(
@@ -79,15 +84,24 @@ export function TemplateDetailPage({ spec }: Props) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-4xl mx-auto px-6 py-6">
-        <div className="mb-6 flex items-baseline gap-3">
-          <h2 className="text-[20px] font-semibold text-text">{title}</h2>
-          <span className="text-[12px] font-mono text-text-muted tabular-nums">
-            v{template.version}
-          </span>
+        <div className="mb-6 flex items-baseline justify-between gap-3">
+          <div className="flex items-baseline gap-3 min-w-0">
+            <h2 className="text-[20px] font-semibold text-text truncate">{title}</h2>
+            <span className="text-[12px] font-mono text-text-muted tabular-nums shrink-0">
+              v{template.version}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="btn-primary shrink-0"
+          >
+            Spawn a workspace
+          </button>
         </div>
 
         {/* README body */}
-        <div className="rounded-lg border border-border bg-bg-secondary px-6 py-5 mb-6">
+        <div className="rounded-lg border border-border bg-bg-secondary px-6 py-5">
           {readme === null && readmeError === null && (
             <p className="text-[12px] text-text-muted italic">Loading README…</p>
           )}
@@ -96,27 +110,20 @@ export function TemplateDetailPage({ spec }: Props) {
           )}
           {readme && <MarkdownContent text={readme} />}
         </div>
-
-        {/* Spawn form */}
-        <div className="rounded-lg border border-border bg-bg-secondary px-6 py-5">
-          <div className="flex items-baseline justify-between mb-4">
-            <h3 className="text-[14px] font-semibold text-text">Spawn a workspace</h3>
-            <span className="text-[11px] text-text-muted">
-              from {template.name} v{template.version}
-            </span>
-          </div>
-          <CreateWorkspaceForm
-            key={templateName}
-            templates={templates}
-            agents={agents}
-            presetTemplate={template.name}
-            onCreated={(workspace) => {
-              refresh()
-              openOrFocus({ kind: 'workspace', params: { wsId: workspace.id } })
-            }}
-          />
-        </div>
       </div>
+
+      {showCreate && (
+        <CreateWorkspaceDialog
+          templates={templates}
+          agents={agents}
+          presetTemplate={template.name}
+          onClose={() => setShowCreate(false)}
+          onCreated={(workspace) => {
+            refresh()
+            openOrFocus({ kind: 'workspace', params: { wsId: workspace.id } })
+          }}
+        />
+      )}
     </div>
   )
 }
