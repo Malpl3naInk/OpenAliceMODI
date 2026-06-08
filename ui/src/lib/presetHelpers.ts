@@ -18,6 +18,13 @@ export interface LabeledOption {
 
 // ==================== Wire shapes ====================
 
+/** Compact label for a wire shape (list chips / credential rows). */
+export const WIRE_SHAPE_SHORT: Record<WireShape, string> = {
+  anthropic: 'Anthropic',
+  'openai-chat': 'OpenAI Chat',
+  'openai-responses': 'OpenAI Responses',
+}
+
 /** The wire shapes a preset supports (each with its endpoint table). */
 export function presetWires(p: Preset | null | undefined): SerializedWire[] {
   return p?.wires ?? []

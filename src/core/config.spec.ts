@@ -371,6 +371,13 @@ describe('credentialSchema', () => {
     expect(credentialSchema.parse({ vendor: 'glm', authType: 'api-key', apiKey: 'k', baseUrl: '  https://api.z.ai/api/anthropic ' }).baseUrl)
       .toBe('https://api.z.ai/api/anthropic')
   })
+
+  it('persists wireShape (disambiguates same-baseUrl shapes, e.g. OpenAI chat vs responses)', () => {
+    expect(credentialSchema.parse({ vendor: 'openai', authType: 'api-key', apiKey: 'k', wireShape: 'openai-responses' }).wireShape)
+      .toBe('openai-responses')
+    expect(credentialSchema.parse({ vendor: 'anthropic', authType: 'api-key', apiKey: 'k' }).wireShape).toBeUndefined()
+    expect(() => credentialSchema.parse({ vendor: 'openai', authType: 'api-key', apiKey: 'k', wireShape: 'bogus' })).toThrow()
+  })
 })
 
 // ==================== resolveProfile (with credential join) ====================

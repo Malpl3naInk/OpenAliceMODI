@@ -65,7 +65,7 @@ export function EndpointField({ value, endpoints, onChange, placeholder }: {
         ))}
         <option value={CUSTOM}>Custom…</option>
       </select>
-      {showCustom && (
+      {showCustom ? (
         <input
           className={inputClass}
           value={value}
@@ -75,6 +75,10 @@ export function EndpointField({ value, endpoints, onChange, placeholder }: {
           autoCapitalize="off"
           autoCorrect="off"
         />
+      ) : (
+        // Always show the concrete URL the region resolves to — the user must
+        // know where requests go, even though picking it from the list is fixed.
+        value && <p className="text-[11px] text-text-muted/80 font-mono break-all px-1">→ {value}</p>
       )}
     </div>
   )

@@ -22,7 +22,7 @@ import { PageLoading } from '../components/StateViews'
 import { Field, inputClass } from '../components/form'
 import { EndpointField, ModelCombobox } from '../components/credentials/PresetFields'
 import {
-  VENDOR_BY_PRESET, isApiKeyPreset, presetModels, vendorPreset,
+  VENDOR_BY_PRESET, isApiKeyPreset, presetModels, vendorPreset, WIRE_SHAPE_SHORT,
   presetWires, wireEndpoints, defaultWireShape, wireShapeForBaseUrl,
 } from '../lib/presetHelpers'
 import { useTestGate } from '../lib/useTestGate'
@@ -147,6 +147,9 @@ export function AIProviderPage() {
                     <div className="flex items-center gap-2">
                       <span className="text-[13px] font-medium text-text">{cred.vendor}</span>
                       <span className="text-[11px] text-text-muted font-mono">{cred.slug}</span>
+                      {cred.wireShape && (
+                        <span className="text-[10px] text-text-muted border border-border rounded px-1">{WIRE_SHAPE_SHORT[cred.wireShape]}</span>
+                      )}
                       {cred.hasApiKey && (
                         <span className="text-[10px] text-green border border-green/40 rounded px-1">key set</span>
                       )}
@@ -245,7 +248,9 @@ function CredentialModal({ mode, cred, presets, onClose, onSaved }: {
   const initialPreset = mode === 'edit' && cred ? vendorPreset(cred.vendor, presets) ?? null : null
   const [preset, setPreset] = useState<Preset | null>(initialPreset)
   const [wireShape, setWireShape] = useState<WireShape | undefined>(
-    initialPreset ? (wireShapeForBaseUrl(initialPreset, cred?.baseUrl ?? '') ?? defaultWireShape(initialPreset)) : undefined,
+    // Prefer the shape stored on the credential; fall back to inferring from the
+    // stored endpoint (pre-wireShape creds) or the preset default.
+    cred?.wireShape ?? (initialPreset ? (wireShapeForBaseUrl(initialPreset, cred?.baseUrl ?? '') ?? defaultWireShape(initialPreset)) : undefined),
   )
   const [baseUrl, setBaseUrl] = useState(cred?.baseUrl ?? '')
   const [apiKey, setApiKey] = useState('')
@@ -305,11 +310,12 @@ function CredentialModal({ mode, cred, presets, onClose, onSaved }: {
         await api.config.updateCredential(cred.slug, {
           vendor,
           baseUrl: baseUrl.trim() || undefined,
+          ...(wireShape ? { wireShape } : {}),
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         })
       } else {
         if (!apiKey.trim()) { setError('API key is required'); setSaving(false); return }
-        await api.config.addCredential({ vendor, baseUrl: baseUrl.trim() || undefined, apiKey: apiKey.trim() })
+        await api.config.addCredential({ vendor, baseUrl: baseUrl.trim() || undefined, apiKey: apiKey.trim(), ...(wireShape ? { wireShape } : {}) })
       }
       await onSaved()
     } catch (err) {

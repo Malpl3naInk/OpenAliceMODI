@@ -3,7 +3,7 @@ import {
   loadConfig, writeConfigSection, readAIProviderConfig, validSections,
   writeProfile, deleteProfile, setActiveProfile,
   readCredentials, addCredential, deleteCredential, writeCredential, resolveCredential,
-  profileSchema, credentialVendorEnum,
+  profileSchema, credentialVendorEnum, credentialWireShapeEnum,
   type ConfigSection, type Profile, type Credential,
 } from '../../core/config.js'
 import type { EngineContext } from '../../core/types.js'
@@ -150,6 +150,7 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
         vendor: cred.vendor,
         authType: cred.authType,
         baseUrl: cred.baseUrl ?? null,
+        wireShape: cred.wireShape ?? null,
         hasApiKey: !!cred.apiKey,
       }))
       return c.json({ credentials: list })
@@ -161,15 +162,17 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
   /** POST /credentials — add an api-key credential (deduped). Returns slug. */
   app.post('/credentials', async (c) => {
     try {
-      const body = await c.req.json<{ vendor?: string; baseUrl?: string; apiKey?: string }>()
+      const body = await c.req.json<{ vendor?: string; baseUrl?: string; apiKey?: string; wireShape?: string }>()
       const apiKey = body.apiKey?.trim()
       if (!apiKey) return c.json({ error: 'apiKey is required' }, 400)
       const vendorParse = credentialVendorEnum.safeParse(body.vendor)
+      const wireParse = credentialWireShapeEnum.safeParse(body.wireShape)
       const cred: Credential = {
         vendor: vendorParse.success ? vendorParse.data : 'custom',
         authType: 'api-key',
         apiKey,
         ...(body.baseUrl?.trim() ? { baseUrl: body.baseUrl.trim() } : {}),
+        ...(wireParse.success ? { wireShape: wireParse.data } : {}),
       }
       const slug = await addCredential(cred)
       return c.json({ slug, vendor: cred.vendor }, 201)
@@ -182,15 +185,18 @@ export function createConfigRoutes(opts?: ConfigRouteOpts) {
   app.put('/credentials/:slug', async (c) => {
     try {
       const slug = c.req.param('slug')
-      const body = await c.req.json<{ vendor?: string; baseUrl?: string; apiKey?: string }>()
+      const body = await c.req.json<{ vendor?: string; baseUrl?: string; apiKey?: string; wireShape?: string }>()
       const existing = await resolveCredential(slug)
       const apiKey = body.apiKey?.trim() || existing.apiKey
       const vendorParse = credentialVendorEnum.safeParse(body.vendor)
+      const wireParse = credentialWireShapeEnum.safeParse(body.wireShape)
+      const wireShape = wireParse.success ? wireParse.data : existing.wireShape
       const cred: Credential = {
         vendor: vendorParse.success ? vendorParse.data : existing.vendor,
         authType: 'api-key',
         ...(apiKey ? { apiKey } : {}),
         ...(body.baseUrl?.trim() ? { baseUrl: body.baseUrl.trim() } : {}),
+        ...(wireShape ? { wireShape } : {}),
       }
       await writeCredential(slug, cred)
       return c.json({ slug })

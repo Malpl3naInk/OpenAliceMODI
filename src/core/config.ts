@@ -59,6 +59,17 @@ export type CredentialVendor = z.infer<typeof credentialVendorEnum>
 export const credentialAuthTypeEnum = z.enum(['api-key', 'subscription'])
 export type CredentialAuthType = z.infer<typeof credentialAuthTypeEnum>
 
+/**
+ * The wire protocol the credential's endpoint speaks. Load-bearing, NOT
+ * derivable from baseUrl alone — OpenAI Chat Completions and Responses share
+ * one base URL (api.openai.com/v1), so only this field distinguishes them. Also
+ * tells injection how to configure the consuming adapter. Mirrors the
+ * `WireShape` union in ai-providers/preset-catalog.ts (kept in sync by hand —
+ * 3 stable values; core must not depend on the ai-providers layer).
+ */
+export const credentialWireShapeEnum = z.enum(['anthropic', 'openai-chat', 'openai-responses'])
+export type CredentialWireShape = z.infer<typeof credentialWireShapeEnum>
+
 export const credentialSchema = z.object({
   vendor: credentialVendorEnum,
   authType: credentialAuthTypeEnum,
@@ -73,6 +84,8 @@ export const credentialSchema = z.object({
    * call sites, since `.parse()` runs inside add/writeCredential.
    */
   baseUrl: z.string().trim().transform((s) => s || undefined).optional(),
+  /** Which wire protocol the endpoint speaks (disambiguates same-baseUrl shapes). */
+  wireShape: credentialWireShapeEnum.optional(),
 })
 export type Credential = z.infer<typeof credentialSchema>
 
@@ -819,7 +832,8 @@ export async function addCredential(credential: Credential): Promise<string> {
     c.vendor === validated.vendor &&
     c.authType === validated.authType &&
     c.apiKey === validated.apiKey &&
-    c.baseUrl === validated.baseUrl,
+    c.baseUrl === validated.baseUrl &&
+    c.wireShape === validated.wireShape,
   )
   if (match) return match[0]
   const taken = new Set(Object.keys(config.credentials))

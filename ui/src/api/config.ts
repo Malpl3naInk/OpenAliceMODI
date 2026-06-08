@@ -108,7 +108,7 @@ export const configApi = {
     return res.json()
   },
 
-  async addCredential(input: { vendor: string; baseUrl?: string; apiKey: string }): Promise<{ slug: string; vendor: string }> {
+  async addCredential(input: { vendor: string; baseUrl?: string; apiKey: string; wireShape?: WireShape }): Promise<{ slug: string; vendor: string }> {
     const res = await fetch('/api/config/credentials', { method: 'POST', headers, body: JSON.stringify(input) })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to add credential' }))
@@ -117,7 +117,7 @@ export const configApi = {
     return res.json()
   },
 
-  async updateCredential(slug: string, input: { vendor: string; baseUrl?: string; apiKey?: string }): Promise<void> {
+  async updateCredential(slug: string, input: { vendor: string; baseUrl?: string; apiKey?: string; wireShape?: WireShape }): Promise<void> {
     const res = await fetch(`/api/config/credentials/${encodeURIComponent(slug)}`, { method: 'PUT', headers, body: JSON.stringify(input) })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Failed to update credential' }))
@@ -152,5 +152,6 @@ export interface CredentialSummary {
   vendor: string
   authType: 'api-key' | 'subscription'
   baseUrl: string | null
+  wireShape: WireShape | null
   hasApiKey: boolean
 }
