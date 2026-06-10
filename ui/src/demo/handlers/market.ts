@@ -6,7 +6,7 @@ import {
   demoSectorRotation,
 } from '../fixtures/market'
 import type { BarSourceCandidate, BarMeta } from '../../api/market'
-import type { MoversBoard, MoverRow, CalendarBoard, MacroBoard, MacroSeriesCard, TermStructureBoard, ValuationStrip, GlobalMacroBoard, ShippingBoard } from '../../api/reference'
+import type { MoversBoard, MoverRow, CalendarBoard, MacroBoard, MacroSeriesCard, TermStructureBoard, ValuationStrip, GlobalMacroBoard, ShippingBoard, FedBoard } from '../../api/reference'
 
 const AAPL = 'AAPL'
 
@@ -42,6 +42,7 @@ export const marketHandlers = [
   http.get('/api/reference/valuation', () => HttpResponse.json(demoValuation)),
   http.get('/api/reference/global-macro', () => HttpResponse.json(demoGlobalMacro)),
   http.get('/api/reference/shipping', () => HttpResponse.json(demoShipping)),
+  http.get('/api/reference/fed', () => HttpResponse.json(demoFed)),
 
   // ---- federated bars (multi-source K-lines) ----
   // AAPL has two demo sources so the source picker is exercised.
@@ -119,6 +120,20 @@ const demoMovers: MoversBoard = {
     mover('AAPL', 'Apple Inc.', 228.9, 0.031, 6.4e7, 1.2),
     mover('NVDA', 'NVIDIA Corporation', 1042.1, 0.062, 5.1e7, 1.8),
   ],
+  undervaluedGrowth: [
+    mover('MGNI', 'Magnite, Inc.', 15.8, 0.021, 4.2e6, 1.1),
+    mover('PFE', 'Pfizer Inc.', 28.4, 0.008, 3.1e7, 0.9),
+  ],
+  growthTech: [
+    mover('APH', 'Amphenol Corporation', 154.1, 0.014, 6.8e6, 1.0),
+    mover('CRWD', 'CrowdStrike Holdings', 401.2, 0.027, 3.4e6, 1.3),
+  ],
+  smallCaps: [
+    mover('LESL', "Leslie's, Inc.", 8.2, 0.059, 5.6e6, 2.1),
+  ],
+  undervaluedLarge: [
+    mover('BCH', 'Banco De Chile', 38.5, 0.006, 1.2e6, 0.8),
+  ],
   meta: { provider: 'yfinance', asOf: '2026-06-10T13:30:00.000Z' },
 }
 
@@ -195,20 +210,20 @@ const demoValuation: ValuationStrip = {
   meta: { provider: 'multpl', asOf: '2026-06-10T13:30:00.000Z' },
 }
 
-function gmRow(country: string, label: string, cpi: number | null, rate: number | null, cli: number | null): GlobalMacroBoard['rows'][number] {
+function gmRow(country: string, label: string, cpi: number | null, rate: number | null, cli: number | null, house?: number | null, share?: number | null): GlobalMacroBoard['rows'][number] {
   const cell = (value: number | null) => (value == null ? { value: null, date: null, error: 'no data' } : { value, date: '2026-04-01' })
-  return { country, label, cpiYoy: cell(cpi), shortRate: cell(rate), cli: cell(cli) }
+  return { country, label, cpiYoy: cell(cpi), shortRate: cell(rate), cli: cell(cli), housePrice: cell(house ?? null), sharePrice: cell(share ?? null) }
 }
 
 const demoGlobalMacro: GlobalMacroBoard = {
   rows: [
-    gmRow('united_states', 'United States', 3.1, 3.9, 100.9),
-    gmRow('china', 'China', 1.2, 1.6, 101.5),
-    gmRow('japan', 'Japan', 2.4, 0.6, 100.2),
-    gmRow('germany', 'Germany', 2.2, 2.1, 99.6),
-    gmRow('united_kingdom', 'United Kingdom', 2.8, 4.1, 99.9),
-    gmRow('india', 'India', 4.6, 6.4, null),
-    gmRow('brazil', 'Brazil', 4.1, 10.2, 100.4),
+    gmRow('united_states', 'United States', 3.1, 3.9, 100.9, 152.3, 214.8),
+    gmRow('china', 'China', 1.2, 1.6, 101.5, 96.4, 118.2),
+    gmRow('japan', 'Japan', 2.4, 0.6, 100.2, 121.7, 246.0),
+    gmRow('germany', 'Germany', 2.2, 2.1, 99.6, 128.9, 168.3),
+    gmRow('united_kingdom', 'United Kingdom', 2.8, 4.1, 99.9, 119.5, 132.6),
+    gmRow('india', 'India', 4.6, 6.4, null, null, 287.4),
+    gmRow('brazil', 'Brazil', 4.1, 10.2, 100.4, 108.2, 176.9),
   ],
   meta: { provider: 'oecd', asOf: '2026-06-10T13:30:00.000Z' },
 }
@@ -220,6 +235,22 @@ function shippingCurve(key: string, name: string, baseTons: number, vessels: num
     vessels: Math.max(1, Math.round(vessels * (1 + Math.sin(i / 7) * 0.15))),
   }))
   return { key, name, points, latest: points[points.length - 1] }
+}
+
+const demoFed: FedBoard = {
+  cards: [
+    macroCard('WALCL', 'Total Assets', 'count', 6.62e12, -2.1e9),
+    macroCard('TREAST', 'Treasuries Held', 'count', 4.47e12, -1.4e9),
+    macroCard('WSHOMCB', 'MBS Held', 'count', 1.96e12, -0.9e9),
+    macroCard('PD_NET', 'Dealer Net Positions', 'count', 6.9e11, 1.2e9),
+    macroCard('PD_UST', 'Dealer Net Treasuries', 'count', 5.2e11, 0.8e9),
+  ],
+  documents: [
+    { date: '2026-06-17', title: 'FOMC Statement — 2026-06-17', type: 'statement', url: 'https://www.federalreserve.gov/newsevents/pressreleases/monetary20260617a1.htm' },
+    { date: '2026-05-28', title: 'FOMC Minutes — 2026-05-28', type: 'minutes', url: 'https://www.federalreserve.gov/monetarypolicy/fomcminutes20260528.htm' },
+    { date: '2026-06-17', title: 'FOMC Projection Materials — 2026-06-17', type: 'projections', url: 'https://www.federalreserve.gov/monetarypolicy/files/fomcprojtabl20260617.pdf' },
+  ],
+  meta: { provider: 'fred+nyfed+federalreserve.gov', asOf: '2026-06-10T13:30:00.000Z' },
 }
 
 const demoShipping: ShippingBoard = {

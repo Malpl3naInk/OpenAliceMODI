@@ -12,6 +12,7 @@ function mkCtx(overrides?: Partial<ReferenceDataService>): EngineContext {
   const reference: ReferenceDataService = {
     movers: async () => ({
       gainers: [ROW], losers: [], active: [ROW],
+      undervaluedGrowth: [ROW], growthTech: [], smallCaps: [], undervaluedLarge: [],
       meta: { provider: 'yfinance', asOf: '2026-06-10T00:00:00.000Z' },
     }),
     calendar: async () => ({
@@ -38,8 +39,15 @@ function mkCtx(overrides?: Partial<ReferenceDataService>): EngineContext {
         cpiYoy: { value: 3.2, date: '2026-04-01' },
         shortRate: { value: 3.72, date: '2026-04-01' },
         cli: { value: 100.9, date: '2026-05-01' },
+        housePrice: { value: 154.0, date: '2025-10-01' },
+        sharePrice: { value: 216.1, date: '2026-05-01' },
       }],
       meta: { provider: 'oecd', asOf: '2026-06-10T00:00:00.000Z' },
+    }),
+    fed: async () => ({
+      cards: [{ id: 'WALCL', label: 'Total Assets', unit: 'count' as const, points: [{ date: '2026-06-03', value: 6.6e12 }], latest: 6.6e12, latestDate: '2026-06-03', change: -1e9 }],
+      documents: [{ date: '2026-06-17', title: 'FOMC Statement — 2026-06-17', type: 'statement', url: 'https://www.federalreserve.gov/x' }],
+      meta: { provider: 'fred+nyfed+federalreserve.gov', asOf: '2026-06-10T00:00:00.000Z' },
     }),
     shipping: async () => ({
       curves: [{ key: 'suez', name: 'Suez Canal', points: [{ date: '2026-06-07', tons: 1.69e6, vessels: 39 }], latest: { date: '2026-06-07', tons: 1.69e6, vessels: 39 } }],
@@ -92,6 +100,13 @@ describe('reference routes', () => {
     const body = await res.json()
     expect(body.cards[0].id).toBe('pe_month')
     expect(body.meta.provider).toBe('multpl')
+  })
+
+  it('GET /fed returns cards + documents', async () => {
+    const res = await createReferenceRoutes(mkCtx()).request('/fed')
+    const body = await res.json()
+    expect(body.cards[0].id).toBe('WALCL')
+    expect(body.documents[0].type).toBe('statement')
   })
 
   it('GET /shipping returns the chokepoint curves', async () => {

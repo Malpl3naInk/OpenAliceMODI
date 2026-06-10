@@ -22,6 +22,7 @@ import type { TermStructureBoard } from './term-structure.js'
 import type { ValuationStrip } from './valuation.js'
 import type { GlobalMacroBoard } from './global-macro.js'
 import type { ShippingBoard } from './shipping.js'
+import type { FedBoard } from './fed.js'
 
 /** Envelope on every reference payload. Provider is an explicit label —
  *  same philosophy as the bar layer's sourceId: annotate the source,
@@ -31,8 +32,12 @@ export interface ReferenceMeta {
   provider: string
   /** Server time the payload was assembled (ISO). */
   asOf: string
-  /** Set by the hub when a payload is served from cache. */
+  /** Set when a payload is served from the reference cache (in-process
+   *  today, the hosted hub tomorrow — same field either way). */
   cachedAt?: string
+  /** True when the upstream refresh FAILED and this is the last good
+   *  payload — stale-while-error. Surfaces loudly, never silently. */
+  stale?: boolean
 }
 
 // ==================== Movers board ====================
@@ -41,6 +46,12 @@ export interface MoversBoard {
   gainers: EquityDiscoveryData[]
   losers: EquityDiscoveryData[]
   active: EquityDiscoveryData[]
+  // Yahoo screeners — fished out of the no-consumer endpoint pool. Same
+  // row shape, editorially distinct lists (value/growth/size lenses).
+  undervaluedGrowth: EquityDiscoveryData[]
+  growthTech: EquityDiscoveryData[]
+  smallCaps: EquityDiscoveryData[]
+  undervaluedLarge: EquityDiscoveryData[]
   meta: ReferenceMeta
 }
 
@@ -115,4 +126,7 @@ export interface ReferenceDataService {
   globalMacro(): Promise<GlobalMacroBoard>
   /** Headline-chokepoint transit volumes from IMF PortWatch — keyless. */
   shipping(): Promise<ShippingBoard>
+  /** Fed policy read: H.4.1 balance sheet (FRED key required), primary
+   *  dealer positions (NY Fed, keyless), FOMC documents (keyless). */
+  fed(): Promise<FedBoard>
 }

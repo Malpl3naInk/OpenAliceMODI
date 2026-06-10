@@ -14,6 +14,9 @@ interface CuratedSeries {
   id: string
   label: string
   unit: MacroUnit
+  /** Multiply raw observations into display units (e.g. FRED reports M2 in
+   *  billions and payrolls in thousands — scale to absolute for fmtCompact). */
+  scale?: number
 }
 
 /** The regime inputs a trader actually checks weekly — rates, curve, labor,
@@ -28,6 +31,15 @@ const CURATED: CuratedSeries[] = [
   { id: 'ICSA', label: 'Initial Jobless Claims', unit: 'count' },
   { id: 'DCOILWTICO', label: 'WTI Crude', unit: 'usd' },
   { id: 'DTWEXBGS', label: 'Dollar Index (Broad)', unit: 'index' },
+  // Fished from the no-consumer FRED pool — plain series ids, so they ride
+  // the same multi-series call at zero extra wiring.
+  { id: 'PAYEMS', label: 'Nonfarm Payrolls', unit: 'count', scale: 1e3 },
+  { id: 'M2SL', label: 'M2 Money Supply', unit: 'count', scale: 1e9 },
+  { id: 'UMCSENT', label: 'Consumer Sentiment (UMich)', unit: 'index' },
+  { id: 'T10YIE', label: '10Y Breakeven Inflation', unit: 'percent' },
+  // SLOOS: net % of banks tightening C&I lending standards (quarterly) —
+  // the credit-cycle read. Positive = tightening.
+  { id: 'DRTSCILM', label: 'Banks Tightening C&I (SLOOS)', unit: 'percent' },
 ]
 
 /** CPI index series — fetched alongside CURATED, surfaced as derived YoY. */
@@ -51,7 +63,8 @@ export async function fetchMacroBoard(economyClient: EconomyClientLike): Promise
       .filter((p): p is MacroPoint => typeof p.value === 'number' && Number.isFinite(p.value))
 
   const card = (s: CuratedSeries, points: MacroPoint[]): MacroSeriesCard => {
-    const recent = points.slice(-MAX_POINTS)
+    const scaled = s.scale ? points.map((p) => ({ date: p.date, value: p.value * s.scale! })) : points
+    const recent = scaled.slice(-MAX_POINTS)
     const latest = recent[recent.length - 1] ?? null
     const prev = recent[recent.length - 2] ?? null
     return {

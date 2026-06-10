@@ -26,6 +26,10 @@ export interface GlobalMacroRow {
   cpiYoy: GlobalMacroCell
   shortRate: GlobalMacroCell
   cli: GlobalMacroCell
+  /** Real house price index, 2015 = 100 — cross-country comparable. */
+  housePrice: GlobalMacroCell
+  /** Share price index, 2015 = 100. */
+  sharePrice: GlobalMacroCell
 }
 
 export interface GlobalMacroBoard {
@@ -47,45 +51,61 @@ export async function fetchGlobalMacro(economyClient: EconomyClientLike): Promis
   const start = new Date()
   start.setMonth(start.getMonth() - 14)
   const startDate = start.toISOString().slice(0, 10)
+  // ONE batched SDMX call per indicator ("USA+CHN+…" in REF_AREA) instead of
+  // per-country fan-out — 5 requests total vs 35. OECD's anonymous per-IP
+  // quota is small enough that the fan-out version could exhaust it on a
+  // couple of board loads.
+  const allCountries = COUNTRIES.map((c) => c.slug).join(',')
 
-  const latestCell = (
-    rows: Array<{ date: string; value?: number | null }>,
-    scale = 1,
-  ): GlobalMacroCell => {
-    const last = [...rows]
-      .filter((r) => typeof r.value === 'number')
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .pop()
-    return last ? { value: (last.value as number) * scale, date: last.date } : { value: null, date: null }
-  }
-  const errCell = (err: unknown): GlobalMacroCell => ({
-    value: null,
-    date: null,
-    error: err instanceof Error ? err.message : String(err),
+  const settled = await Promise.allSettled([
+    economyClient.getCPI({ provider: 'oecd', country: allCountries, transform: 'yoy', frequency: 'monthly', start_date: startDate }),
+    economyClient.getInterestRates({ provider: 'oecd', country: allCountries, duration: 'short', start_date: startDate }),
+    economyClient.getCompositeLeadingIndicator({ provider: 'oecd', country: allCountries, start_date: startDate }),
+    economyClient.getHousePriceIndex({ provider: 'oecd', country: allCountries, start_date: startDate }),
+    economyClient.getSharePriceIndex({ provider: 'oecd', country: allCountries, start_date: startDate }),
+  ] as const)
+
+  type Row = { date: string; country?: string | null; value?: number | null }
+
+  // indicator → country label → latest cell
+  const cellsByIndicator = settled.map((r, idx): { cells: Map<string, GlobalMacroCell>; error?: string } => {
+    if (r.status === 'rejected') {
+      return { cells: new Map(), error: r.reason instanceof Error ? r.reason.message : String(r.reason) }
+    }
+    const scale = idx === 1 ? 100 : 1 // rates come back as fractions
+    const latestByCountry = new Map<string, Row>()
+    for (const row of r.value as Row[]) {
+      if (typeof row.value !== 'number' || !row.country) continue
+      const prev = latestByCountry.get(row.country)
+      if (!prev || row.date > prev.date) latestByCountry.set(row.country, row)
+    }
+    const cells = new Map<string, GlobalMacroCell>()
+    for (const [country, row] of latestByCountry) {
+      cells.set(country, { value: (row.value as number) * scale, date: row.date })
+    }
+    return { cells }
   })
 
-  const rows = await Promise.all(
-    COUNTRIES.map(async ({ slug, label }): Promise<GlobalMacroRow> => {
-      const [cpi, rate, cli] = await Promise.allSettled([
-        economyClient.getCPI({ provider: 'oecd', country: slug, transform: 'yoy', frequency: 'monthly', start_date: startDate }),
-        economyClient.getInterestRates({ provider: 'oecd', country: slug, duration: 'short', start_date: startDate }),
-        economyClient.getCompositeLeadingIndicator({ provider: 'oecd', country: slug, start_date: startDate }),
-      ])
-      return {
-        country: slug,
-        label,
-        // OECD CPI yoy is already percent; rates are fractions → ×100.
-        cpiYoy: cpi.status === 'fulfilled' ? latestCell(cpi.value as never) : errCell(cpi.reason),
-        shortRate: rate.status === 'fulfilled' ? latestCell(rate.value as never, 100) : errCell(rate.reason),
-        cli: cli.status === 'fulfilled' ? latestCell(cli.value as never) : errCell(cli.reason),
-      }
-    }),
-  )
+  const cellFor = (indicator: number, label: string): GlobalMacroCell => {
+    const { cells, error } = cellsByIndicator[indicator]
+    const hit = cells.get(label)
+    if (hit) return hit
+    return error ? { value: null, date: null, error } : { value: null, date: null }
+  }
 
-  // Every cell down = OECD itself is unreachable — fail loud.
-  const allDead = rows.every((r) => r.cpiYoy.value == null && r.shortRate.value == null && r.cli.value == null)
-  if (allDead) {
-    const firstErr = rows.flatMap((r) => [r.cpiYoy.error, r.shortRate.error, r.cli.error]).find(Boolean)
+  const rows: GlobalMacroRow[] = COUNTRIES.map(({ slug, label }) => ({
+    country: slug,
+    label,
+    cpiYoy: cellFor(0, label),
+    shortRate: cellFor(1, label),
+    cli: cellFor(2, label),
+    housePrice: cellFor(3, label),
+    sharePrice: cellFor(4, label),
+  }))
+
+  // Every indicator down = OECD itself is unreachable — fail loud.
+  if (cellsByIndicator.every((c) => c.cells.size === 0)) {
+    const firstErr = cellsByIndicator.map((c) => c.error).find(Boolean)
     throw new Error(firstErr ?? 'OECD returned no data for any country.')
   }
 

@@ -8,6 +8,7 @@ import {
   type MoversBoard, type MoverRow, type ReferenceMeta, type CalendarBoard,
   type MacroBoard, type MacroSeriesCard, type TermStructureBoard, type TermCurve,
   type GlobalMacroBoard, type GlobalMacroCell, type ShippingBoard, type ShippingCurve,
+  type FedBoard,
 } from '../api/reference'
 import { useWorkspace } from '../tabs/store'
 import type { ViewSpec } from '../tabs/types'
@@ -22,6 +23,7 @@ export const MARKET_BOARD_TITLES: Record<BoardKind, string> = {
   'term-structure': 'Term Structure',
   'global-macro': 'Global Macro',
   shipping: 'Shipping',
+  fed: 'Fed',
 }
 
 const REFRESH_MS = 5 * 60 * 1000
@@ -45,12 +47,14 @@ export function MarketBoardPage({ spec }: PageProps) {
       return <GlobalMacroBoardView />
     case 'shipping':
       return <ShippingBoardView />
+    case 'fed':
+      return <FedBoardView />
   }
 }
 
 // ==================== Movers ====================
 
-type MoversList = 'gainers' | 'losers' | 'active'
+type MoversList = 'gainers' | 'losers' | 'active' | 'undervaluedGrowth' | 'growthTech' | 'smallCaps' | 'undervaluedLarge'
 
 function MoversBoardView() {
   const { t } = useTranslation()
@@ -97,7 +101,7 @@ function MoversBoardView() {
       />
       <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 flex flex-col gap-4 min-h-0">
         <div className="flex items-center gap-1">
-          {(['gainers', 'losers', 'active'] as const).map((k) => (
+          {(['gainers', 'losers', 'active', 'undervaluedGrowth', 'growthTech', 'smallCaps', 'undervaluedLarge'] as const).map((k) => (
             <button
               key={k}
               type="button"
@@ -131,6 +135,10 @@ function listLabel(k: MoversList, t: ReturnType<typeof useTranslation>['t']): st
     case 'gainers': return t('market.moversGainers')
     case 'losers': return t('market.moversLosers')
     case 'active': return t('market.moversActive')
+    case 'undervaluedGrowth': return t('market.moversUndervaluedGrowth')
+    case 'growthTech': return t('market.moversGrowthTech')
+    case 'smallCaps': return t('market.moversSmallCaps')
+    case 'undervaluedLarge': return t('market.moversUndervaluedLarge')
   }
 }
 
@@ -431,6 +439,11 @@ function macroLabel(card: MacroSeriesCard, t: ReturnType<typeof useTranslation>[
     case 'ICSA': return t('market.macroClaims')
     case 'DCOILWTICO': return t('market.macroWti')
     case 'DTWEXBGS': return t('market.macroDollar')
+    case 'PAYEMS': return t('market.macroPayrolls')
+    case 'M2SL': return t('market.macroM2')
+    case 'UMCSENT': return t('market.macroSentiment')
+    case 'T10YIE': return t('market.macroBreakeven')
+    case 'DRTSCILM': return t('market.macroSloos')
     default: return card.label
   }
 }
@@ -597,7 +610,9 @@ function GlobalMacroBoardView() {
                   <th className="py-1.5 pr-3 font-medium">{t('market.colCountry')}</th>
                   <th className="py-1.5 px-3 font-medium text-right">{t('market.colCpiYoy')}</th>
                   <th className="py-1.5 px-3 font-medium text-right">{t('market.colShortRate')}</th>
-                  <th className="py-1.5 pl-3 font-medium text-right">{t('market.colCli')}</th>
+                  <th className="py-1.5 px-3 font-medium text-right">{t('market.colCli')}</th>
+                  <th className="py-1.5 px-3 font-medium text-right">{t('market.colHousePrice')}</th>
+                  <th className="py-1.5 pl-3 font-medium text-right">{t('market.colSharePrice')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -607,6 +622,8 @@ function GlobalMacroBoardView() {
                     <GlobalCell cell={r.cpiYoy} fmt={(v) => `${v.toFixed(2)}%`} colorBy="cpi" />
                     <GlobalCell cell={r.shortRate} fmt={(v) => `${v.toFixed(2)}%`} />
                     <GlobalCell cell={r.cli} fmt={(v) => v.toFixed(1)} colorBy="cli" />
+                    <GlobalCell cell={r.housePrice} fmt={(v) => v.toFixed(1)} />
+                    <GlobalCell cell={r.sharePrice} fmt={(v) => v.toFixed(1)} />
                   </tr>
                 ))}
               </tbody>
@@ -722,6 +739,101 @@ function ChokepointCard({ curve }: { curve: ShippingCurve }) {
       </div>
     </div>
   )
+}
+
+// ==================== Fed ====================
+
+function FedBoardView() {
+  const { t } = useTranslation()
+  const [data, setData] = useState<FedBoard | null>(null)
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    const load = async () => {
+      try {
+        const res = await referenceApi.fed()
+        if (!alive) return
+        setData(res)
+        setUpdatedAt(new Date())
+        setError(null)
+      } catch (err) {
+        if (!alive) return
+        setError(err instanceof Error ? err.message : 'Failed to load')
+      } finally {
+        if (alive) setLoading(false)
+      }
+    }
+    load()
+    const timer = setInterval(load, 60 * 60 * 1000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+
+  return (
+    <div className="flex flex-col flex-1 min-h-0">
+      <PageHeader
+        title={t('market.boardFed')}
+        description={
+          <>
+            {t('market.fedSubtitle')}
+            {data && <span className="text-text-muted/50"> · {data.meta.provider}</span>}
+          </>
+        }
+        live={{ lastUpdated: updatedAt }}
+      />
+      <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 flex flex-col gap-5 min-h-0">
+        {loading && !data && <div className="text-[13px] text-text-muted">{t('common.loading')}</div>}
+        {error && (
+          <div className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{error}</div>
+        )}
+        {data?.errors && Object.entries(data.errors).map(([k, msg]) => (
+          <div key={k} className="text-[13px] text-red border border-red/30 rounded-md px-3 py-2 bg-red/5">{k}: {msg}</div>
+        ))}
+        {data && data.cards.length > 0 && (
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            {data.cards.map((c) => (
+              <SeriesCard key={c.id} card={c} label={fedLabel(c.id, t) ?? c.label} emptyText={t('market.noMatches')} />
+            ))}
+          </div>
+        )}
+        {data && data.documents.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-muted/60">{t('market.fedDocuments')}</h3>
+            {data.documents.map((d) => (
+              <a
+                key={`${d.type}-${d.date}`}
+                href={d.url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-3 px-3 py-1.5 rounded-md border border-border/60 bg-bg-secondary/30 hover:bg-bg-secondary text-[12px]"
+              >
+                <span className="font-mono text-text-muted shrink-0">{d.date}</span>
+                <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${
+                  d.type === 'statement' ? 'bg-accent/15 text-accent'
+                  : d.type === 'minutes' ? 'bg-green/15 text-green'
+                  : 'bg-bg-tertiary text-text-muted'
+                }`}>{d.type}</span>
+                <span className="text-text truncate">{d.title}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function fedLabel(id: string, t: ReturnType<typeof useTranslation>['t']): string | null {
+  switch (id) {
+    case 'WALCL': return t('market.fedTotalAssets')
+    case 'TREAST': return t('market.fedTreasuries')
+    case 'WSHOMCB': return t('market.fedMbs')
+    case 'PD_NET': return t('market.fedDealerNet')
+    case 'PD_UST': return t('market.fedDealerTreasuries')
+    default: return null
+  }
 }
 
 function fmtPrice(x: number | null): string {

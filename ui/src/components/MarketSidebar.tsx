@@ -111,6 +111,11 @@ export function MarketSidebar() {
           onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'global-macro' } })}
         />
         <SidebarRow
+          label={t('market.boardFed')}
+          active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'fed'}
+          onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'fed' } })}
+        />
+        <SidebarRow
           label={t('market.boardShipping')}
           active={focusedSpec?.kind === 'market-board' && focusedSpec.params.board === 'shipping'}
           onClick={() => openOrFocus({ kind: 'market-board', params: { board: 'shipping' } })}

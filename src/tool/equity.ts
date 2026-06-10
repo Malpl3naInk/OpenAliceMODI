@@ -138,6 +138,34 @@ If unsure about the symbol, use marketSearchForResearch to find it.`,
       },
     }),
 
+    equityGetShortInterest: tool({
+      description: `Get share statistics and short interest for a stock (Yahoo, keyless).
+
+Returns shares outstanding, float, shares short (current + prior month),
+short % of float, and days-to-cover. The squeeze/positioning read: rising
+short interest with high days-to-cover = crowded short.`,
+      inputSchema: z.object({
+        symbol: z.string().describe('Ticker symbol, e.g. "AAPL"'),
+      }).meta({ examples: [{ symbol: 'GME' }] }),
+      execute: async ({ symbol }) => {
+        return await equityClient.getShareStatistics({ symbol, provider: 'yfinance' })
+      },
+    }),
+
+    equityGetEstimates: tool({
+      description: `Get the analyst price-target consensus for a stock.
+
+Returns target high / low / consensus / median from sell-side analysts
+(Yahoo Finance, keyless). Compare the consensus to the current price for the
+street's implied upside; the high-low spread reads as disagreement.`,
+      inputSchema: z.object({
+        symbol: z.string().describe('Ticker symbol, e.g. "AAPL"'),
+      }).meta({ examples: [{ symbol: 'AAPL' }] }),
+      execute: async ({ symbol }) => {
+        return await equityClient.getEstimateConsensus({ symbol, provider: 'yfinance' })
+      },
+    }),
+
     equityDiscover: tool({
       description: `Discover trending stocks in the market right now.
 
@@ -163,7 +191,7 @@ for where the money is. Default keeps the provider ranking (price move for
 gainers/losers, absolute share volume for active). Volume-context fields are
 populated on the default yfinance data only.`,
       inputSchema: z.object({
-        type: z.enum(['gainers', 'losers', 'active']).describe('"gainers" for top price gainers, "losers" for top losers, "active" for most actively traded by absolute volume'),
+        type: z.enum(['gainers', 'losers', 'active', 'undervalued_growth', 'growth_tech', 'aggressive_small_caps', 'undervalued_large_caps']).describe('"gainers"/"losers" by price move, "active" by absolute volume; screener lenses: "undervalued_growth" (low PE + growth), "growth_tech" (revenue/earnings growth tech), "aggressive_small_caps" (high-beta small caps), "undervalued_large_caps" (low-PE large caps)'),
         sortBy: z.enum(['default', 'relative_volume', 'dollar_volume']).optional().describe('"default" keeps the provider ranking; "relative_volume" re-ranks by unusual volume (today vs 3-month avg); "dollar_volume" re-ranks by traded notional (price × volume) — where the money actually is'),
       }).meta({ examples: [{ type: 'active', sortBy: 'relative_volume' }] }),
       execute: async ({ type, sortBy }) => {
@@ -177,6 +205,18 @@ populated on the default yfinance data only.`,
             break
           case 'active':
             rows = await equityClient.getActive()
+            break
+          case 'undervalued_growth':
+            rows = await equityClient.getUndervaluedGrowth()
+            break
+          case 'growth_tech':
+            rows = await equityClient.getGrowthTech()
+            break
+          case 'aggressive_small_caps':
+            rows = await equityClient.getAggressiveSmallCaps()
+            break
+          case 'undervalued_large_caps':
+            rows = await equityClient.getUndervaluedLargeCaps()
             break
         }
 

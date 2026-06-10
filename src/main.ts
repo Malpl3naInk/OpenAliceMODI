@@ -31,6 +31,8 @@ import { createQuantTools } from './tool/quant.js'
 import { createBarService } from './domain/market-data/bars/index.js'
 import { createReferenceData } from './domain/market-data/reference/service.js'
 import { createSectorRotationTools } from './tool/sector-rotation.js'
+import { createDerivativesTools } from './tool/derivatives.js'
+import { createIndexTools } from './tool/indices.js'
 import { createEconomyTools } from './tool/economy.js'
 import { SessionStore } from './core/session.js'
 import { createInboxStore } from './core/inbox-store.js'
@@ -219,6 +221,12 @@ async function main() {
   // confused the model / bloated context. The code remains for now.
   toolCenter.register(createQuantTools({ barService }), 'quant')
   toolCenter.register(createSectorRotationTools(equityClient), 'sector-rotation')
+  if (derivativesClient) {
+    toolCenter.register(createDerivativesTools(derivativesClient), 'derivatives')
+  }
+  if (indexClient) {
+    toolCenter.register(createIndexTools(indexClient), 'indices')
+  }
   toolCenter.register(createEconomyTools(economyClient, commodityClient), 'economy')
 
   console.log(`tool-center: ${toolCenter.list().length} tools registered`)

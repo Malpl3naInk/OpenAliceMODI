@@ -11,7 +11,7 @@ import type {
   EquitySearchData, EquityHistoricalData, EquityInfoData, KeyMetricsData,
   IncomeStatementData, BalanceSheetData, CashFlowStatementData, FinancialRatiosData,
   PriceTargetConsensusData, CalendarEarningsData, CalendarIpoData, CalendarDividendData,
-  InsiderTradingData, EquityDiscoveryData,
+  InsiderTradingData, EquityDiscoveryData, ShareStatisticsData,
 } from '@traderalice/opentypebb'
 
 export class OpenBBEquityClient {
@@ -234,19 +234,19 @@ export class OpenBBEquityClient {
   }
 
   async getUndervaluedLargeCaps(params: Record<string, unknown> = {}) {
-    return this.request('/discovery/undervalued_large_caps', params)
+    return this.request<EquityDiscoveryData>('/discovery/undervalued_large_caps', params)
   }
 
   async getUndervaluedGrowth(params: Record<string, unknown> = {}) {
-    return this.request('/discovery/undervalued_growth', params)
+    return this.request<EquityDiscoveryData>('/discovery/undervalued_growth', params)
   }
 
   async getAggressiveSmallCaps(params: Record<string, unknown> = {}) {
-    return this.request('/discovery/aggressive_small_caps', params)
+    return this.request<EquityDiscoveryData>('/discovery/aggressive_small_caps', params)
   }
 
   async getGrowthTech(params: Record<string, unknown> = {}) {
-    return this.request('/discovery/growth_tech', params)
+    return this.request<EquityDiscoveryData>('/discovery/growth_tech', params)
   }
 
   async getTopRetail(params: Record<string, unknown> = {}) {
@@ -276,7 +276,7 @@ export class OpenBBEquityClient {
   }
 
   async getShareStatistics(params: Record<string, unknown>) {
-    return this.request('/ownership/share_statistics', params)
+    return this.request<ShareStatisticsData>('/ownership/share_statistics', params)
   }
 
   async getForm13F(params: Record<string, unknown>) {

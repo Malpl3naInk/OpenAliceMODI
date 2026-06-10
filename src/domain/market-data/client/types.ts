@@ -12,7 +12,7 @@ import type {
   EquitySearchData, EquityHistoricalData, EquityInfoData, KeyMetricsData,
   IncomeStatementData, BalanceSheetData, CashFlowStatementData, FinancialRatiosData,
   PriceTargetConsensusData, CalendarEarningsData, CalendarIpoData, CalendarDividendData,
-  InsiderTradingData, EquityDiscoveryData,
+  InsiderTradingData, EquityDiscoveryData, ShareStatisticsData,
   // Crypto
   CryptoSearchData, CryptoHistoricalData,
   // Currency
@@ -33,6 +33,8 @@ import type {
   BlsSearchData, BlsSeriesData,
   ConsumerPriceIndexData, CountryInterestRatesData, CompositeLeadingIndicatorData,
   PortInfoData, PortVolumeData, ChokepointInfoData, ChokepointVolumeData,
+  RetailPricesData, BalanceOfPaymentsData, HousePriceIndexData, SharePriceIndexData,
+  FomcDocumentsData, CentralBankHoldingsData, PrimaryDealerPositioningData,
 } from '@traderalice/opentypebb'
 
 export interface EquityClientLike {
@@ -49,9 +51,15 @@ export interface EquityClientLike {
   getCalendarIpo(params?: Record<string, unknown>): Promise<CalendarIpoData[]>
   getCalendarDividend(params?: Record<string, unknown>): Promise<CalendarDividendData[]>
   getInsiderTrading(params: Record<string, unknown>): Promise<InsiderTradingData[]>
+  getShareStatistics(params: Record<string, unknown>): Promise<ShareStatisticsData[]>
   getGainers(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
   getLosers(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
   getActive(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
+  // Yahoo screeners (keyless) — value/growth/size discovery lenses.
+  getUndervaluedGrowth(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
+  getGrowthTech(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
+  getAggressiveSmallCaps(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
+  getUndervaluedLargeCaps(params?: Record<string, unknown>): Promise<EquityDiscoveryData[]>
 }
 
 export interface CryptoClientLike {
@@ -108,6 +116,16 @@ export interface EconomyClientLike {
   getCPI(params: Record<string, unknown>): Promise<ConsumerPriceIndexData[]>
   getInterestRates(params?: Record<string, unknown>): Promise<CountryInterestRatesData[]>
   getCompositeLeadingIndicator(params?: Record<string, unknown>): Promise<CompositeLeadingIndicatorData[]>
+  getRetailPrices(params?: Record<string, unknown>): Promise<RetailPricesData[]>
+  getHousePriceIndex(params?: Record<string, unknown>): Promise<HousePriceIndexData[]>
+  getSharePriceIndex(params?: Record<string, unknown>): Promise<SharePriceIndexData[]>
+  // ECB — euro-area balance of payments (keyless).
+  getBalanceOfPayments(params?: Record<string, unknown>): Promise<BalanceOfPaymentsData[]>
+  // Fed specials — FOMC document links (fed website), balance sheet (FRED
+  // H.4.1), primary dealer net positions (NY Fed markets API, keyless).
+  getFomcDocuments(params?: Record<string, unknown>): Promise<FomcDocumentsData[]>
+  getCentralBankHoldings(params?: Record<string, unknown>): Promise<CentralBankHoldingsData[]>
+  getPrimaryDealerPositioning(params?: Record<string, unknown>): Promise<PrimaryDealerPositioningData[]>
   // IMF PortWatch — satellite AIS shipping data (keyless ArcGIS layers).
   getPortInfo(params?: Record<string, unknown>): Promise<PortInfoData[]>
   getPortVolume(params?: Record<string, unknown>): Promise<PortVolumeData[]>
