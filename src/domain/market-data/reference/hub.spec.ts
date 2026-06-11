@@ -39,17 +39,29 @@ describe('createHubFetcher', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('falls to null on HTTP errors and opens the breaker', async () => {
+  it('HTTP errors fall to null WITHOUT tripping the breaker (board-specific failure)', async () => {
     fetchSpy.mockResolvedValue(new Response('nope', { status: 502 }))
     const viaHub = createHubFetcher({ enabled: true, baseUrl: 'https://hub.test' }, { breakerMs: 60_000 })
     expect(await viaHub<Board>('macro')).toBeNull()
-    // Breaker open: no second fetch inside the window.
     expect(await viaHub<Board>('macro')).toBeNull()
+    // Reachable hub answering 502 = retried every call, no backoff.
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('transport failures trip a PER-BOARD breaker — siblings keep fetching', async () => {
+    fetchSpy.mockRejectedValue(new TypeError('network down'))
+    const viaHub = createHubFetcher({ enabled: true, baseUrl: 'https://hub.test' }, { breakerMs: 60_000 })
+    expect(await viaHub<Board>('global-macro')).toBeNull()
+    // Same board: breaker open, no second fetch.
+    expect(await viaHub<Board>('global-macro')).toBeNull()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
-    // Breaker closes after the window.
+    // Different board: NOT gated by the sibling's breaker.
+    // (Fresh Response per call — a body is single-read.)
+    fetchSpy.mockImplementation(() => Promise.resolve(new Response(JSON.stringify(board(3)))))
+    expect((await viaHub<Board>('macro'))?.value).toBe(3)
+    // Original board recovers after the window.
     vi.advanceTimersByTime(61_000)
-    fetchSpy.mockResolvedValue(new Response(JSON.stringify(board(2))))
-    expect((await viaHub<Board>('macro'))?.value).toBe(2)
+    expect((await viaHub<Board>('global-macro'))?.value).toBe(3)
   })
 
   it('rejects non-contract shapes (data boundary: shape-checked, never trusted)', async () => {

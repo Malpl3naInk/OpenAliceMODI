@@ -37,25 +37,35 @@ export type HubFetcher = <T extends { meta: ReferenceMeta }>(board: string) => P
 export function createHubFetcher(cfg: HubConfig | undefined, opts?: { timeoutMs?: number; breakerMs?: number }): HubFetcher {
   const timeoutMs = opts?.timeoutMs ?? TIMEOUT_MS
   const breakerMs = opts?.breakerMs ?? BREAKER_MS
-  let downUntil = 0
+  // Per-board breakers, tripped ONLY by transport-level failures
+  // (timeout / network). An HTTP error is the hub being REACHABLE and
+  // telling us one board is down — that must never gate the others:
+  // a shared breaker once let a single 502ing board knock siblings onto
+  // their local path, where each board's cache pinned the downgrade for
+  // its full TTL. One bad board may only poison itself.
+  const downUntil = new Map<string, number>()
 
   return async function hubBoard<T extends { meta: ReferenceMeta }>(board: string): Promise<T | null> {
     if (!cfg?.enabled || !cfg.baseUrl) return null
-    if (Date.now() < downUntil) return null
+    if (Date.now() < (downUntil.get(board) ?? 0)) return null
+    let res: Response
     try {
-      const res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/api/reference/${board}`, {
+      res = await fetch(`${cfg.baseUrl.replace(/\/$/, '')}/api/reference/${board}`, {
         signal: AbortSignal.timeout(timeoutMs),
         headers: { Accept: 'application/json' },
       })
-      if (!res.ok) throw new Error(`hub returned ${res.status}`)
+    } catch {
+      // Transport failure — hub unreachable; back off for this board.
+      downUntil.set(board, Date.now() + breakerMs)
+      return null
+    }
+    try {
+      if (!res.ok) return null // board-specific upstream failure; no breaker
       const data: unknown = await res.json()
-      if (!data || typeof data !== 'object' || !('meta' in data)) {
-        throw new Error('hub returned a non-contract shape')
-      }
+      if (!data || typeof data !== 'object' || !('meta' in data)) return null
       const payload = data as T
       return { ...payload, meta: { ...payload.meta, origin: 'hub' as const } }
     } catch {
-      downUntil = Date.now() + breakerMs
       return null
     }
   }
