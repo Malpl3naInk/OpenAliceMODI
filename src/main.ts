@@ -195,6 +195,7 @@ async function main() {
     derivativesClient,
     indexClient,
     equityProvider: config.marketData.providers.equity,
+    hub: config.marketData.hub,
   })
 
   // ==================== Tool Registration ====================
