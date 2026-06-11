@@ -1,11 +1,65 @@
 import { z } from 'zod'
 import { readFile, writeFile, mkdir, unlink, rm } from 'fs/promises'
-import { resolve } from 'path'
+import { resolve, join, dirname } from 'path'
+import { homedir } from 'os'
 import { newsCollectorSchema } from '../domain/news/config.js'
 import { runMigrations } from '../migrations/runner.js'
 import { dataPath } from '@/core/paths.js'
 
 const CONFIG_DIR = dataPath('config')
+
+// ==================== Global provider keys (cross-checkout) ====================
+// Data-vendor API keys (FRED / FMP / EIA / BLS / …) are USER-level, not
+// instance-level: a fresh checkout or worktree starts with an empty
+// data/config and would otherwise ask for every key again. They live in
+// ~/.openalice/provider-keys.json (the same user-global root the workspace
+// launcher uses) and merge UNDER the instance file — a local value always
+// wins. Broker credentials deliberately stay instance-local: data/ next to
+// the source tree is the audit boundary for anything money-capable.
+
+/** Resolved per call (not module-const) so tests / portable installs can
+ *  point it elsewhere via OPENALICE_GLOBAL_DIR. */
+function globalProviderKeysFile(): string {
+  const root = process.env['OPENALICE_GLOBAL_DIR'] ?? join(homedir(), '.openalice')
+  return join(root, 'provider-keys.json')
+}
+
+async function readGlobalProviderKeys(): Promise<Record<string, string>> {
+  try {
+    const raw: unknown = JSON.parse(await readFile(globalProviderKeysFile(), 'utf-8'))
+    if (typeof raw !== 'object' || raw === null) return {}
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, v]) => typeof v === 'string' && v !== ''),
+    ) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
+/** Fill providerKeys gaps from the user-global file (local wins per key). */
+async function applyGlobalProviderKeys<T extends { providerKeys: object }>(parsed: T): Promise<T> {
+  const keys = parsed.providerKeys as Record<string, string | undefined>
+  const global = await readGlobalProviderKeys()
+  for (const [k, v] of Object.entries(global)) {
+    if (!keys[k]) keys[k] = v
+  }
+  return parsed
+}
+
+/** Mirror a Settings save back to the user-global file so every future
+ *  checkout starts with the keys. An EXPLICIT empty string clears the key
+ *  globally too — otherwise a deleted key resurrects in each new worktree;
+ *  keys absent from the payload are left untouched. */
+async function mirrorProviderKeysToGlobal(keys: Record<string, string | undefined>): Promise<void> {
+  const global = await readGlobalProviderKeys()
+  for (const [k, v] of Object.entries(keys)) {
+    if (typeof v === 'string' && v.trim() !== '') global[k] = v
+    else if (v === '') delete global[k]
+  }
+  const file = globalProviderKeysFile()
+  await mkdir(dirname(file), { recursive: true })
+  await writeFile(file, JSON.stringify(global, null, 2) + '\n')
+}
 
 // ==================== Individual Schemas ====================
 
@@ -178,7 +232,6 @@ const securitiesSchema = z.object({
 
 const marketDataSchema = z.object({
   enabled: z.boolean().default(true),
-  apiUrl: z.string().default('http://localhost:6900'),
   providers: z.object({
     equity: z.string().default('yfinance'),
     crypto: z.string().default('yfinance'),
@@ -203,7 +256,13 @@ const marketDataSchema = z.object({
     tiingo: z.string().optional(),
     biztoc: z.string().optional(),
   }).default({}),
-  backend: z.enum(['typebb-sdk', 'openbb-api']).default('typebb-sdk'),
+  /** Hosted reference-data hub (TraderHub). Enabled by default: anonymous
+   *  GETs of public boards, no user data attached; one switch to opt out.
+   *  Self-hosters point baseUrl at their own instance. */
+  hub: z.object({
+    enabled: z.boolean().default(true),
+    baseUrl: z.string().default('https://traderhub.openalice.ai'),
+  }).default({ enabled: true, baseUrl: 'https://traderhub.openalice.ai' }),
 })
 
 const compactionSchema = z.object({
@@ -394,7 +453,7 @@ export async function loadConfig(): Promise<Config> {
     agent:         await parseAndSeed(files[1], agentSchema, raws[1]),
     crypto:        await parseAndSeed(files[2], cryptoSchema, raws[2]),
     securities:    await parseAndSeed(files[3], securitiesSchema, raws[3]),
-    marketData:    await parseAndSeed(files[4], marketDataSchema, raws[4]),
+    marketData:    await applyGlobalProviderKeys(await parseAndSeed(files[4], marketDataSchema, raws[4])),
     compaction:    await parseAndSeed(files[5], compactionSchema, raws[5]),
     aiProvider:    await parseAndSeed(files[6], aiProviderSchema, raws[6]),
     snapshot:      await parseAndSeed(files[7], snapshotSchema, raws[7]),
@@ -653,9 +712,9 @@ export async function readAIProviderConfig() {
 export async function readMarketDataConfig() {
   try {
     const raw = JSON.parse(await readFile(resolve(CONFIG_DIR, 'market-data.json'), 'utf-8'))
-    return marketDataSchema.parse(raw)
+    return applyGlobalProviderKeys(marketDataSchema.parse(raw))
   } catch {
-    return marketDataSchema.parse({})
+    return applyGlobalProviderKeys(marketDataSchema.parse({}))
   }
 }
 
@@ -804,6 +863,10 @@ export async function writeConfigSection(section: ConfigSection, data: unknown):
   const validated = schema.parse(data)
   await mkdir(CONFIG_DIR, { recursive: true })
   await writeFile(resolve(CONFIG_DIR, sectionFiles[section]), JSON.stringify(validated, null, 2) + '\n')
+  if (section === 'marketData') {
+    const keys = (validated as { providerKeys?: Record<string, string | undefined> }).providerKeys
+    if (keys) await mirrorProviderKeysToGlobal(keys)
+  }
   return validated
 }
 

@@ -137,7 +137,7 @@ describe('readMarketDataConfig', () => {
     fileNotFound()
     const cfg = await readMarketDataConfig()
     expect(cfg.enabled).toBe(true)
-    expect(cfg.backend).toBe('typebb-sdk')
+    expect(cfg.hub).toEqual({ enabled: true, baseUrl: 'https://traderhub.openalice.ai' })
   })
 
   it('parses enabled flag from file', async () => {

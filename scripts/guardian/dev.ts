@@ -17,7 +17,9 @@
 import { resolve } from 'node:path'
 import type { ChildProcess } from 'node:child_process'
 import {
-  probePorts,
+  readPortsFile,
+  resolvePortConfig,
+  planPorts,
   spawnChild,
   waitForHttp,
   installCascadeShutdown,
@@ -27,15 +29,16 @@ import {
 } from './shared.js'
 
 async function main(): Promise<void> {
-  const ports = await probePorts()
   const dataHome = process.cwd()
+  // env (OPENALICE_*_PORT) > data/config/ports.json > default+probe.
+  const ports = await planPorts(resolvePortConfig(process.env, await readPortsFile(dataHome)))
   const flagPath = resolve(dataHome, 'data/control/restart-uta.flag')
 
   console.log('')
   console.log(`[guardian] UTA      →  http://127.0.0.1:${ports.utaPort}`)
   console.log(`[guardian] Alice    →  http://localhost:${ports.webPort}`)
   console.log(`[guardian] MCP      →  http://localhost:${ports.mcpPort}/mcp`)
-  console.log(`[guardian] UI       →  http://localhost:5173  (Vite picks +1 if taken)`)
+  console.log(`[guardian] UI       →  http://localhost:${ports.uiPort}`)
   console.log(`[guardian] flag     →  ${flagPath}`)
   console.log('')
 
@@ -74,6 +77,9 @@ async function main(): Promise<void> {
       ...baseEnv,
       OPENALICE_WEB_PORT: String(ports.webPort),
       OPENALICE_MCP_PORT: String(ports.mcpPort),
+      // Where the UI actually lives — consumed by the workspace WS-origin
+      // allowlist (src/workspaces/config.ts buildDefaultOrigins).
+      OPENALICE_UI_PORT: String(ports.uiPort),
       OPENALICE_UTA_URL: utaUrl,
     },
     prefixLogs: true,
@@ -84,7 +90,12 @@ async function main(): Promise<void> {
     name: 'vite',
     command: 'pnpm',
     args: ['--filter', 'open-alice-ui', 'dev'],
-    env: { ...baseEnv, OPENALICE_BACKEND_PORT: String(ports.webPort) },
+    env: {
+      ...baseEnv,
+      OPENALICE_BACKEND_PORT: String(ports.webPort),
+      // Guardian is the port authority: Vite binds exactly this (strictPort).
+      OPENALICE_UI_PORT: String(ports.uiPort),
+    },
     prefixLogs: true,
   })
 
