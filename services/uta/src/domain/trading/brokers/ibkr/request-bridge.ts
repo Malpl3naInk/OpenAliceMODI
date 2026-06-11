@@ -12,6 +12,7 @@
 
 import Decimal from 'decimal.js'
 import {
+  BarData,
   DefaultEWrapper,
   NO_VALID_ID,
   TickTypeEnum,
@@ -38,6 +39,9 @@ import type {
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const ACCOUNT_READY_TIMEOUT_MS = 20_000
+// Historical bar pulls are routinely the slowest TWS round-trips —
+// large duration windows + farm-pacing can blow past the default 10s.
+const HISTORICAL_TIMEOUT_MS = 60_000
 
 export class RequestBridge extends DefaultEWrapper {
   // ---- State ----
@@ -164,6 +168,15 @@ export class RequestBridge extends DefaultEWrapper {
   requestSnapshot(reqId: number, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<TickSnapshot> {
     this.snapshots.set(reqId, {})
     return this.request<TickSnapshot>(reqId, timeoutMs)
+  }
+
+  /**
+   * Register a historical-bars request. Collects every `historicalData` callback
+   * for the reqId; resolves on `historicalDataEnd`. Errors from TWS for this
+   * reqId are routed through the existing `error()` → `rejectRequest` path.
+   */
+  requestHistoricalBars(reqId: number, timeoutMs = HISTORICAL_TIMEOUT_MS): Promise<BarData[]> {
+    return this.requestCollector<BarData>(reqId, timeoutMs)
   }
 
   // ---- Mode B: orderId-based requests ----
@@ -536,6 +549,16 @@ export class RequestBridge extends DefaultEWrapper {
     const snap = this.snapshots.get(reqId) ?? {}
     this.snapshots.delete(reqId)
     this.resolveRequest(reqId, snap)
+  }
+
+  // ---- Historical bars ----
+
+  override historicalData(reqId: number, bar: BarData): void {
+    this.pushCollector(reqId, bar)
+  }
+
+  override historicalDataEnd(reqId: number, _start: string, _end: string): void {
+    this.resolveCollector(reqId)
   }
 
   // ---- Orders ----

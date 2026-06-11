@@ -73,6 +73,11 @@ import type {
   StageClosePositionParams,
 } from '@traderalice/uta-protocol'
 
+// Reference snapshot of `new Contract()` field defaults, used by
+// `_expandAliceIdIfNeeded` to recognise un-set fields regardless of type.
+// Module-scoped so we don't allocate a fresh Contract per call.
+const _expandAliceIdIfNeeded_defaults = new Contract() as unknown as Record<string, unknown>
+
 // ==================== UnifiedTradingAccount ====================
 
 export class UnifiedTradingAccount {
@@ -748,14 +753,19 @@ export class UnifiedTradingAccount {
     const src = contract as unknown as Record<string, unknown>
     const dst = expanded as unknown as Record<string, unknown>
     // Skip aliceId (already on expanded) and Contract default values —
-    // `new Contract()` populates every string field with `''`, so a
-    // blanket copy would clobber the expanded symbol/localSymbol with
-    // the caller's defaults. The override semantics only matter for
-    // fields the caller actually set to a non-default value.
+    // `new Contract()` populates every field with a type-specific sentinel
+    // (`''` for strings, `0` for numbers like `conId`, `false` for booleans,
+    // `UNSET_DOUBLE` for `strike`). A blanket copy would clobber whatever
+    // the broker's resolveNativeKey populated on `expanded` with those
+    // sentinels — most damagingly, `conId = 0` clobbering an IBKR-side
+    // conId resolved from the aliceId. Compare against a reference fresh
+    // Contract so all sentinel shapes are treated uniformly as un-set.
+    const DEFAULTS = _expandAliceIdIfNeeded_defaults
     for (const key of Object.keys(src)) {
-      const value = src[key]
       if (key === 'aliceId') continue
-      if (value === undefined || value === '' || value === null) continue
+      const value = src[key]
+      if (value === undefined || value === null) continue
+      if (value === DEFAULTS[key]) continue
       dst[key] = value
     }
     return expanded

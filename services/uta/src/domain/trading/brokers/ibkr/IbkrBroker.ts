@@ -19,6 +19,7 @@ import {
   Order,
   OrderCancel,
   OrderState,
+  UNSET_DECIMAL,
   type ContractDescription,
   type ContractDetails,
 } from '@traderalice/ibkr'
@@ -34,12 +35,101 @@ import {
   type MarketClock,
   type BrokerConfigField,
   type TpSlParams,
+  type Bar,
+  type BarParams,
+  type BarInterval,
 } from '../types.js'
 import '../../contract-ext.js'
 import { aggregateAccountFromPositions } from '../../position-math.js'
 import { RequestBridge } from './request-bridge.js'
 import { resolveSymbol } from './ibkr-contracts.js'
 import type { IbkrBrokerConfig } from './ibkr-types.js'
+
+// ==================== Historical-bar helpers ====================
+
+/** Normalized `BarInterval` → IBKR `barSizeSetting` wire string. */
+const IBKR_BAR_SIZE: Record<BarInterval, string> = {
+  '1m': '1 min',
+  '5m': '5 mins',
+  '15m': '15 mins',
+  '30m': '30 mins',
+  '1h': '1 hour',
+  '4h': '4 hours',
+  '1d': '1 day',
+  '1w': '1 week',
+}
+
+/** Bar size in seconds — used to derive `durationStr` from `limit`. */
+const IBKR_BAR_SECONDS: Record<BarInterval, number> = {
+  '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+  '1h': 3600, '4h': 14400, '1d': 86400, '1w': 604800,
+}
+
+/**
+ * Format `params.end` for TWS's `endDateTime` field. Empty string ⇒ "now"
+ * (the only safe default for the common trailing-window case). The
+ * `yyyymmdd-HH:mm:ss` form is the hyphen variant introduced in TWS 10.20+
+ * and is unambiguously UTC; the older space-separated form falls back to
+ * the TWS workstation's local timezone, which we don't want.
+ */
+function formatIbkrEndDateTime(end?: Date): string {
+  if (!end) return ''
+  const y = end.getUTCFullYear()
+  const m = String(end.getUTCMonth() + 1).padStart(2, '0')
+  const d = String(end.getUTCDate()).padStart(2, '0')
+  const hh = String(end.getUTCHours()).padStart(2, '0')
+  const mm = String(end.getUTCMinutes()).padStart(2, '0')
+  const ss = String(end.getUTCSeconds()).padStart(2, '0')
+  return `${y}${m}${d}-${hh}:${mm}:${ss}`
+}
+
+/**
+ * Build a TWS `durationStr` covering at least `durSec` seconds. TWS accepts
+ * `S` only for windows up to a day; beyond that, units must roll up to D/Y
+ * (W/M are also legal but ceiling-up-to-Y is simpler and equally accepted).
+ */
+function formatIbkrDuration(durSec: number): string {
+  if (durSec <= 86_400) return `${Math.max(60, Math.ceil(durSec))} S`
+  const days = Math.ceil(durSec / 86_400)
+  if (days < 365) return `${days} D`
+  return `${Math.ceil(days / 365)} Y`
+}
+
+/**
+ * Derive `durationStr` from BarParams. Priority: explicit `start` (window
+ * = end − start) > `limit` (window = limit × bar) > conservative default.
+ * The default exists so a bare `{ interval }` call still returns a usable
+ * recent slice rather than erroring at the wire.
+ */
+function computeIbkrDuration(params: BarParams, interval: BarInterval): string {
+  const barSec = IBKR_BAR_SECONDS[interval]
+  if (params.start) {
+    const endMs = (params.end ?? new Date()).getTime()
+    return formatIbkrDuration(Math.max(barSec, Math.ceil((endMs - params.start.getTime()) / 1000)))
+  }
+  if (params.limit) {
+    return formatIbkrDuration(params.limit * barSec)
+  }
+  if (barSec < 3600) return '1 D'
+  if (barSec < 86_400) return '1 W'
+  if (barSec < 7 * 86_400) return '6 M'
+  return '2 Y'
+}
+
+/**
+ * Parse `BarData.date` from TWS. With `formatDate=2` the field arrives as
+ * either an 8-char `YYYYMMDD` (daily/weekly bars, regardless of the format
+ * flag — TWS quirk) or an epoch-seconds integer (intraday). Detect by length.
+ */
+function parseIbkrBarDate(date: string): Date {
+  if (/^\d{8}$/.test(date)) {
+    const y = parseInt(date.slice(0, 4), 10)
+    const m = parseInt(date.slice(4, 6), 10) - 1
+    const d = parseInt(date.slice(6, 8), 10)
+    return new Date(Date.UTC(y, m, d))
+  }
+  return new Date(parseInt(date, 10) * 1000)
+}
 
 export class IbkrBroker implements IBroker {
   // ---- Self-registration ----
@@ -377,6 +467,93 @@ export class IbkrBroker implements IBroker {
     }
   }
 
+  /**
+   * Historical OHLCV via TWS `reqHistoricalData`. Quality depends on the
+   * caller's IBKR market-data subscriptions — without one, intraday equity
+   * bars are 15-min delayed; with one, realtime. Daily bars are usually
+   * available without subscription.
+   *
+   * Window selection mirrors the IBKR API: caller provides EITHER a
+   * `start` (and optional `end`) OR a `limit` (recent N bars). When both
+   * `limit` and a wider duration come back from TWS, we slice to the
+   * most recent `limit` to match the contract surface used by CCXT/Alpaca.
+   *
+   * `useRTH=0` includes extended-hours bars; `whatToShow` defaults to
+   * TRADES (override for CASH/forex which require MIDPOINT/BID/ASK).
+   */
+  async getHistorical(contract: Contract, params: BarParams): Promise<Bar[]> {
+    const barSize = IBKR_BAR_SIZE[params.interval]
+    if (!barSize) {
+      throw new BrokerError('EXCHANGE', `IBKR does not support the ${params.interval} interval`)
+    }
+
+    // TWS's reqHistoricalData is one of the few endpoints that REQUIRES at
+    // least one of symbol / localSymbol / secId on the wire (most other
+    // endpoints accept a bare conId). Callers reaching us via the native-key
+    // path (e.g. `getHistorical(broker.resolveNativeKey('12345'), …)`) hand
+    // in a Contract with ONLY conId populated — that path hits TWS error 321
+    // ("symbol or the local-symbol or the security id must be entered").
+    // Backfill via reqContractDetails when conId is the only identifier;
+    // loud-refuse when nothing at all identifies the contract.
+    if (!contract.symbol && !contract.localSymbol && !contract.secId) {
+      if (contract.conId) {
+        const details = await this.getContractDetails(contract)
+        if (!details) {
+          throw new BrokerError('EXCHANGE', `Cannot resolve conId=${contract.conId} for historical data`)
+        }
+        contract = details.contract
+      } else {
+        throw new BrokerError('EXCHANGE', 'getHistorical requires Contract.symbol, localSymbol, secId, or conId')
+      }
+    }
+
+    // Same routing/currency defaults as placeOrder/getQuote — keeps callers that
+    // only fill in symbol+secType (AI tools, simple scripts) routable.
+    if (!contract.exchange) contract.exchange = 'SMART'
+    if (!contract.currency) contract.currency = 'USD'
+
+    const reqId = this.bridge.allocReqId()
+    const endDateTime = formatIbkrEndDateTime(params.end)
+    const durationStr = computeIbkrDuration(params, params.interval)
+    const whatToShow = params.whatToShow ?? 'TRADES'
+
+    try {
+      const promise = this.bridge.requestHistoricalBars(reqId)
+      this.client.reqHistoricalData(
+        reqId,
+        contract,
+        endDateTime,
+        durationStr,
+        barSize,
+        whatToShow,
+        0,      // useRTH=0 — include extended-hours bars
+        2,      // formatDate=2 — epoch seconds (intraday) / YYYYMMDD (daily)
+        false,  // keepUpToDate=false — one-shot, not a streaming subscription
+        [],     // chartOptions
+      )
+      const rows = await promise
+
+      const bars: Bar[] = rows.map(b => ({
+        timestamp: parseIbkrBarDate(b.date),
+        open: String(b.open),
+        high: String(b.high),
+        low: String(b.low),
+        close: String(b.close),
+        // BarData.volume defaults to UNSET_DECIMAL for whatToShow=MIDPOINT/BID/ASK
+        // (TWS doesn't aggregate volume on those streams). Surface as '0' rather
+        // than letting the sentinel 2^127-1 leak through.
+        volume: b.volume.equals(UNSET_DECIMAL) ? '0' : b.volume.toString(),
+      }))
+
+      if (params.limit && bars.length > params.limit) {
+        return bars.slice(-params.limit)
+      }
+      return bars
+    } catch (err) {
+      throw BrokerError.from(err)
+    }
+  }
+
   async getMarketClock(): Promise<MarketClock> {
     // TODO: per-contract trading hours via ContractDetails.tradingHours
     // For now, use local time with NYSE schedule as a baseline.
@@ -414,6 +591,14 @@ export class IbkrBroker implements IBroker {
     return {
       supportedSecTypes: ['STK', 'OPT', 'FUT', 'FOP', 'CASH', 'WAR', 'BOND'],
       supportedOrderTypes: ['MKT', 'LMT', 'STP', 'STP LMT', 'TRAIL', 'MOC', 'LOC', 'REL'],
+      // Quality depends on the caller's IBKR market-data subscriptions —
+      // 'subscription' is the canonical label for "full data when entitled,
+      // delayed otherwise". We don't probe the entitlement here.
+      historicalBars: {
+        supported: true,
+        quality: 'subscription',
+        supportedBarSizes: ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'],
+      },
     }
   }
 
